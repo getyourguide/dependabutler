@@ -59,16 +59,41 @@ type DependabotConfig struct {
 	Updates    []Update            `yaml:"updates"`
 }
 
+// Allow holds the config items of an allow definition
+type Allow struct {
+	DependencyName string `yaml:"dependency-name,omitempty"`
+	DependencyType string `yaml:"dependency-type,omitempty"`
+}
+
+// Ignore holds the config items of an ignore definition
+type Ignore struct {
+	DependencyName string   `yaml:"dependency-name"`
+	Versions       []string `yaml:"versions,omitempty"`
+	UpdateTypes    []string `yaml:"update-types,omitempty"`
+}
+
 // Update holds the config items of an update definition
 type Update struct {
 	PackageEcosystem              string        `yaml:"package-ecosystem"`
 	Directory                     string        `yaml:"directory"`
-	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution,omitempty"`
-	Registries                    []string      `yaml:"registries,omitempty"`
 	Schedule                      Schedule      `yaml:"schedule,omitempty"`
+	Registries                    []string      `yaml:"registries,omitempty"`
 	CommitMessage                 CommitMessage `yaml:"commit-message,omitempty"`
 	OpenPullRequestsLimit         int           `yaml:"open-pull-requests-limit,omitempty"`
-	RebaseStrategy                string        `yaml:"rebase-strategy,omitempty"`
+	Assignees                     []string      `yaml:"assignees,omitempty"`
+	Allow                         []Allow       `yaml:"allow,omitempty"`
+	Ignore                        []Ignore      `yaml:"ignore,omitempty"`
+	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution,omitempty"`
+	Labels                        []string      `yaml:"labels,omitempty"`
+	Milestone                     int           `yaml:"milestone,omitempty"`
+	PullRequestBranchName         struct {
+		Separator string `yaml:"separator"`
+	} `yaml:"pull-request-branch-name,omitempty"`
+	RebaseStrategy     string   `yaml:"rebase-strategy,omitempty"`
+	Reviewers          []string `yaml:"reviewers,omitempty"`
+	TargetBranch       string   `yaml:"target-branch,omitempty"`
+	Vendor             bool     `yaml:"vendor,omitempty"`
+	VersioningStrategy string   `yaml:"versioning-strategy,omitempty"`
 }
 
 // Registry holds the config items of a registry definition
