@@ -190,7 +190,8 @@ func main() {
 
 // GetUpdatedConfigYaml returns the new .dependabot.yml file content, based on the current content and the manifests found.
 func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, repo string,
-	loadFileFn config.LoadFileContent, loadFileParams config.LoadFileContentParameters) ([]byte, config.ChangeInfo) {
+	loadFileFn config.LoadFileContent, loadFileParams config.LoadFileContentParameters,
+) ([]byte, config.ChangeInfo) {
 	dependabotConfig, err := config.ParseDependabotConfig(currentConfig)
 	if err != nil {
 		log.Printf("ERROR Could not parse current config for %v: %v", repo, err)

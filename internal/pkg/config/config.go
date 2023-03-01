@@ -211,8 +211,9 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 }
 
 // AddManifest adds config for a new manifest file to dependabot.yml
-func (config *DependabotConfig) AddManifest(manifestFile string, manifestType string, toolConfig ToolConfig, changeInfo *ChangeInfo,
-	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters) {
+func (config *DependabotConfig) AddManifest(manifestFile string, manifestType string, toolConfig ToolConfig,
+	changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
+) {
 	if manifestFile == "" || manifestType == "" {
 		return
 	}
@@ -334,7 +335,8 @@ func (config *DependabotConfig) ToYaml() []byte {
 
 // UpdateConfig updates a dependabot config with a list of manifests found and the tool's config.
 func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig,
-	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters) ChangeInfo {
+	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
+) ChangeInfo {
 	changeInfo := ChangeInfo{
 		NewRegistries: []RegistryInfo{},
 		NewUpdates:    []UpdateInfo{},

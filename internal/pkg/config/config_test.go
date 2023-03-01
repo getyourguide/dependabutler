@@ -161,6 +161,10 @@ func TestIsManifestCovered(t *testing.T) {
 	}
 }
 
+func LoadFileContentDummy(file string, params LoadFileContentParameters) string {
+	return "dummy"
+}
+
 func TestAddManifest(t *testing.T) {
 	config := DependabotConfig{}
 	toolConfig := ToolConfig{
@@ -189,7 +193,7 @@ func TestAddManifest(t *testing.T) {
 		{"docker", "otherapp/sub/folder/Dockerfile", 3, "/otherapp/sub/folder"},
 	} {
 		changeInfo := ChangeInfo{}
-		config.AddManifest(tt.manifestFile, tt.manifestType, toolConfig, &changeInfo)
+		config.AddManifest(tt.manifestFile, tt.manifestType, toolConfig, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
 		// check the number of expected elements
 		gotCount := len(config.Updates)
 		if gotCount != tt.expectedCount {
