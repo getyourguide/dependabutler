@@ -204,6 +204,10 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	if manifestPath != "/" {
 		manifestPath = strings.TrimSuffix(manifestPath, "/")
 	}
+	if manifestType == "github-actions" {
+		// special case for GitHub Actions
+		manifestPath = "/"
+	}
 	updateRegistries := []string{}
 
 	// check if one or more (default) registries are defined for this manifest type
