@@ -13,6 +13,27 @@ import (
 	"github.com/google/go-github/v50/github"
 )
 
+// LoadRemoteFileContent is the implementation of LoadFileContent, for remote files (GitHub).
+func LoadRemoteFileContent(file string, params config.LoadFileContentParameters) string {
+	content, err := githubapi.GetFileContent(params.GitHubClient, params.Org, params.Repo, file)
+	if err != nil {
+		log.Printf("WARN  Could not content of file %v: %v", file, err)
+		return ""
+	}
+	return string(content)
+}
+
+// LoadLocalFileContent is the implementation of LoadFileContent, for local files (file system).
+func LoadLocalFileContent(file string, params config.LoadFileContentParameters) string {
+	fullPath := filepath.Join(params.Directory, file)
+	content, err := util.ReadFile(fullPath)
+	if err != nil {
+		log.Printf("WARN  Could not content of file %v: %v", fullPath, err)
+		return ""
+	}
+	return string(content)
+}
+
 func showUsageAndExit() {
 	flag.Usage()
 	os.Exit(1)
@@ -78,7 +99,8 @@ func processRemoteRepo(toolConfig config.ToolConfig, execute bool, org string, r
 	fileList := githubapi.GetRepoFileList(gitHubClient, org, repo, baseBranch)
 	config.ScanFileList(fileList, manifests)
 	// update the configuration and create a PR
-	yamlContent, changeInfo := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, repo)
+	loadFileParameters := config.LoadFileContentParameters{GitHubClient: gitHubClient, Org: org, Repo: repo}
+	yamlContent, changeInfo := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, repo, LoadRemoteFileContent, loadFileParameters)
 	if yamlContent != nil {
 		prDesc := githubapi.CreatePRDescription(changeInfo)
 		if execute {
@@ -114,7 +136,8 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) {
 	}
 	config.ScanLocalDirectory(dir, "", manifests)
 	// update the configuration and save it back
-	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, dir)
+	loadFileParameters := config.LoadFileContentParameters{Directory: dir}
+	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, dir, LoadLocalFileContent, loadFileParameters)
 	if yamlContent != nil {
 		if execute {
 			if err := util.MakeDirIfNotExists(dirPath); err != nil {
@@ -166,13 +189,14 @@ func main() {
 }
 
 // GetUpdatedConfigYaml returns the new .dependabot.yml file content, based on the current content and the manifests found.
-func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, repo string) ([]byte, config.ChangeInfo) {
+func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, repo string,
+	loadFileFn config.LoadFileContent, loadFileParams config.LoadFileContentParameters) ([]byte, config.ChangeInfo) {
 	dependabotConfig, err := config.ParseDependabotConfig(currentConfig)
 	if err != nil {
 		log.Printf("ERROR Could not parse current config for %v: %v", repo, err)
 		return nil, config.ChangeInfo{}
 	}
-	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig)
+	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, loadFileFn, loadFileParams)
 	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 {
 		// at least one item in the update block is needed
 		return dependabotConfig.ToYaml(), changeInfo

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
+	"github.com/google/go-github/v50/github"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,7 +33,7 @@ type ToolConfig struct {
 }
 
 // DefaultRegistries holds the default registries for new update definitions
-type DefaultRegistries map[string]Registry
+type DefaultRegistries map[string]DefaultRegistry
 
 // PullRequestParameters holds the parameters for PRs created by dependabutler
 type PullRequestParameters struct {
@@ -41,6 +42,15 @@ type PullRequestParameters struct {
 	CommitMessage string `yaml:"commit-message"`
 	PRTitle       string `yaml:"pr-title"`
 	BranchName    string `yaml:"branch-name"`
+}
+
+// DefaultRegistry holds the config items of a default registry
+type DefaultRegistry struct {
+	Type             string `yaml:"type"`
+	URL              string `yaml:"url"`
+	Username         string `yaml:"username,omitempty"`
+	Password         string `yaml:"password,omitempty"`
+	URLMatchRequired bool   `yaml:"url-match-required,omitempty"`
 }
 
 // UpdateDefaults holds the default config for new update definitions
@@ -137,6 +147,17 @@ type UpdateInfo struct {
 	File      string
 }
 
+// LoadFileContentParameters holds all parameters needed for the LoadFileContent function implementations.
+type LoadFileContentParameters struct {
+	GitHubClient *github.Client
+	Org          string
+	Repo         string
+	Directory    string
+}
+
+// LoadFileContent is a function type for loading the content of a file.
+type LoadFileContent func(file string, params LoadFileContentParameters) string
+
 // Parse parses the config.yml format
 func (config *ToolConfig) Parse(data []byte) error {
 	return yaml.Unmarshal(data, config)
@@ -190,7 +211,8 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 }
 
 // AddManifest adds config for a new manifest file to dependabot.yml
-func (config *DependabotConfig) AddManifest(manifestFile string, manifestType string, toolConfig ToolConfig, changeInfo *ChangeInfo) {
+func (config *DependabotConfig) AddManifest(manifestFile string, manifestType string, toolConfig ToolConfig, changeInfo *ChangeInfo,
+	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters) {
 	if manifestFile == "" || manifestType == "" {
 		return
 	}
@@ -213,10 +235,23 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	// check if one or more (default) registries are defined for this manifest type
 	if defaultRegistries, containsRegistry := toolConfig.Registries[manifestType]; containsRegistry {
 		for name, defaultRegistry := range defaultRegistries {
+			if defaultRegistry.URLMatchRequired {
+				// check if registry is used for this manifest file - only add it if so
+				fileContent := loadFileFn(manifestFile, loadFileParams)
+				log.Printf("DEBUG %v", fileContent)
+				// TODO
+
+				continue
+			}
 			updateRegistries = append(updateRegistries, name)
 			if _, contains := config.Registries[name]; !contains {
 				// registry not yet in config -> add it
-				config.Registries[name] = defaultRegistry
+				config.Registries[name] = Registry{
+					Type:     defaultRegistry.Type,
+					URL:      defaultRegistry.URL,
+					Username: defaultRegistry.Username,
+					Password: defaultRegistry.Password,
+				}
 				changeInfo.NewRegistries = append(changeInfo.NewRegistries, RegistryInfo{Type: defaultRegistry.Type, Name: name})
 			}
 		}
@@ -297,7 +332,8 @@ func (config *DependabotConfig) ToYaml() []byte {
 }
 
 // UpdateConfig updates a dependabot config with a list of manifests found and the tool's config.
-func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig) ChangeInfo {
+func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig,
+	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters) ChangeInfo {
 	changeInfo := ChangeInfo{
 		NewRegistries: []RegistryInfo{},
 		NewUpdates:    []UpdateInfo{},
@@ -306,7 +342,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	// Iterate manifest files and check if they are covered by the current config file
 	for manifestFile, manifestType := range manifests {
 		if !config.IsManifestCovered(manifestFile, manifestType) {
-			config.AddManifest(manifestFile, manifestType, toolConfig, &changeInfo)
+			config.AddManifest(manifestFile, manifestType, toolConfig, &changeInfo, loadFileFn, loadFileParams)
 		}
 	}
 	return changeInfo

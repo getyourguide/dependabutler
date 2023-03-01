@@ -29,6 +29,8 @@ update-defaults:
 #
 #   - if a registry is still missing in the config file, it is automatically added to the "registries" section
 #
+#   - if "url-match-required" is true, then the URL (without the protocol part) must be found in the manifest file 
+#
 registries:
   npm:
     my-npm-registry:
@@ -42,11 +44,13 @@ registries:
       url: https://docker.just.an.example.com
       username: dockeruser
       password: "${{secrets.DOCKER_REGISTRY_PASSWORD}}"
+      url-match-required: true
     my-other-docker-registry:
       type: docker-registry
       url: https://docker.other.just.an.example.com
       username: otherdockeruser
       password: "${{secrets.OTHER_DOCKER_REGISTRY_PASSWORD}}"
+      url-match-required: true
 
 #
 # parameters for pull request created (for mode=remote)

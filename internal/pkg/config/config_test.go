@@ -39,6 +39,7 @@ registries:
       url: https://docker.foo.bar
       username: dockeruser2
       password: dockerpass2
+      url-match-required: true
 `,
 			&ToolConfig{
 				UpdateDefaults: UpdateDefaults{
@@ -51,12 +52,12 @@ registries:
 					},
 				},
 				Registries: map[string]DefaultRegistries{
-					"npm": map[string]Registry{
+					"npm": map[string]DefaultRegistry{
 						"npm-reg": {Type: "npm-registry", URL: "https://npm.foo.bar", Username: "usr", Password: "${{secrets.PASSWORD}}"},
 					},
-					"docker": map[string]Registry{
+					"docker": map[string]DefaultRegistry{
 						"docker-1": {Type: "docker-registry-1", URL: "https://docker.bar.foo", Username: "dockeruser", Password: "dockerpass"},
-						"docker-2": {Type: "docker-registry-2", URL: "https://docker.foo.bar", Username: "dockeruser2", Password: "dockerpass2"},
+						"docker-2": {Type: "docker-registry-2", URL: "https://docker.foo.bar", Username: "dockeruser2", Password: "dockerpass2", URLMatchRequired: true},
 					},
 				},
 			},
