@@ -64,11 +64,11 @@ pull-request-parameters:
 #   - can be extended in case you are using custom file names by convention
 #
 manifest-patterns:
-  npm: "(.*/)?package\\.json"
-  maven: "(.*/)?pom\\.xml"
-  pip: "(.*/)?requirements\\.txt"
-  docker: "(.*/)?Dockerfile"
-  gomod: "(.*/)?go\\.mod"
-  composer: "(.*/)?composer\\.json"
-  gradle: "(.*/)?build\\.gradle(\\.kts)?"
-  github-actions: "\\.github/workflows/.*\\.yml"
+  npm: "^(.*/)?package\\.json$"
+  maven: "^(.*/)?pom\\.xml$"
+  pip: "^(.*/)?requirements\\.txt$"
+  docker: "^(.*/)?Dockerfile$"
+  gomod: "^(.*/)?go\\.mod$"
+  composer: "^(.*/)?composer\\.json$"
+  gradle: "^(.*/)?build\\.gradle(\\.kts)?$"
+  github-actions: "^\\.github/workflows/.*\\.yml$"
