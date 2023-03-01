@@ -61,16 +61,24 @@ func processRemoteRepo(toolConfig config.ToolConfig, execute bool, org string, r
 	if err != nil {
 		return
 	}
+	if *gitHubRepo.Archived {
+		log.Printf("INFO  Repository %v is archived. Nothing to do.", repo)
+		return
+	}
 	currentConfig, err := githubapi.GetFileContent(gitHubClient, org, repo, ".github/dependabot.yml")
 	if err != nil {
-		log.Printf("ERROR Could not read config of repo %v: %v", repo, err)
+		if strings.Contains(err.Error(), "This repository is empty") {
+			log.Printf("INFO  Repository %v is empty. Nothing to do.", repo)
+		} else {
+			log.Printf("ERROR Could not read config of repo %v: %v", repo, err)
+		}
 		return
 	}
 	baseBranch := *gitHubRepo.DefaultBranch
 	fileList := githubapi.GetRepoFileList(gitHubClient, org, repo, baseBranch)
 	config.ScanFileList(fileList, manifests)
 	// update the configuration and create a PR
-	yamlContent, changeInfo := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig)
+	yamlContent, changeInfo := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, repo)
 	if yamlContent != nil {
 		prDesc := githubapi.CreatePRDescription(changeInfo)
 		if execute {
@@ -106,7 +114,7 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) {
 	}
 	config.ScanLocalDirectory(dir, "", manifests)
 	// update the configuration and save it back
-	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig)
+	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, dir)
 	if yamlContent != nil {
 		if execute {
 			if err := util.MakeDirIfNotExists(dirPath); err != nil {
@@ -158,10 +166,10 @@ func main() {
 }
 
 // GetUpdatedConfigYaml returns the new .dependabot.yml file content, based on the current content and the manifests found.
-func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig) ([]byte, config.ChangeInfo) {
+func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, repo string) ([]byte, config.ChangeInfo) {
 	dependabotConfig, err := config.ParseDependabotConfig(currentConfig)
 	if err != nil {
-		log.Printf("ERROR Could not parse current config: %v", err)
+		log.Printf("ERROR Could not parse current config for %v: %v", repo, err)
 		return nil, config.ChangeInfo{}
 	}
 	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig)
