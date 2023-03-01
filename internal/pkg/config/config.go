@@ -237,11 +237,12 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 		for name, defaultRegistry := range defaultRegistries {
 			if defaultRegistry.URLMatchRequired {
 				// check if registry is used for this manifest file - only add it if so
+				urlParts := strings.SplitN(defaultRegistry.URL, "//", 2)
+				urlWithoutProtocol := urlParts[len(urlParts)-1]
 				fileContent := loadFileFn(manifestFile, loadFileParams)
-				log.Printf("DEBUG %v", fileContent)
-				// TODO
-
-				continue
+				if !strings.Contains(fileContent, urlWithoutProtocol) {
+					continue
+				}
 			}
 			updateRegistries = append(updateRegistries, name)
 			if _, contains := config.Registries[name]; !contains {
