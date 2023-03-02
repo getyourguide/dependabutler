@@ -39,6 +39,7 @@ registries:
       url: https://docker.foo.bar
       username: dockeruser2
       password: dockerpass2
+      url-match-required: true
 `,
 			&ToolConfig{
 				UpdateDefaults: UpdateDefaults{
@@ -51,12 +52,12 @@ registries:
 					},
 				},
 				Registries: map[string]DefaultRegistries{
-					"npm": map[string]Registry{
+					"npm": map[string]DefaultRegistry{
 						"npm-reg": {Type: "npm-registry", URL: "https://npm.foo.bar", Username: "usr", Password: "${{secrets.PASSWORD}}"},
 					},
-					"docker": map[string]Registry{
+					"docker": map[string]DefaultRegistry{
 						"docker-1": {Type: "docker-registry-1", URL: "https://docker.bar.foo", Username: "dockeruser", Password: "dockerpass"},
-						"docker-2": {Type: "docker-registry-2", URL: "https://docker.foo.bar", Username: "dockeruser2", Password: "dockerpass2"},
+						"docker-2": {Type: "docker-registry-2", URL: "https://docker.foo.bar", Username: "dockeruser2", Password: "dockerpass2", URLMatchRequired: true},
 					},
 				},
 			},
@@ -160,6 +161,10 @@ func TestIsManifestCovered(t *testing.T) {
 	}
 }
 
+func LoadFileContentDummy(file string, params LoadFileContentParameters) string {
+	return "dummy"
+}
+
 func TestAddManifest(t *testing.T) {
 	config := DependabotConfig{}
 	toolConfig := ToolConfig{
@@ -188,7 +193,7 @@ func TestAddManifest(t *testing.T) {
 		{"docker", "otherapp/sub/folder/Dockerfile", 3, "/otherapp/sub/folder"},
 	} {
 		changeInfo := ChangeInfo{}
-		config.AddManifest(tt.manifestFile, tt.manifestType, toolConfig, &changeInfo)
+		config.AddManifest(tt.manifestFile, tt.manifestType, toolConfig, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
 		// check the number of expected elements
 		gotCount := len(config.Updates)
 		if gotCount != tt.expectedCount {

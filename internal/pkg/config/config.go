@@ -4,12 +4,14 @@ package config
 import (
 	"bytes"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
+	"github.com/google/go-github/v50/github"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,7 +34,7 @@ type ToolConfig struct {
 }
 
 // DefaultRegistries holds the default registries for new update definitions
-type DefaultRegistries map[string]Registry
+type DefaultRegistries map[string]DefaultRegistry
 
 // PullRequestParameters holds the parameters for PRs created by dependabutler
 type PullRequestParameters struct {
@@ -41,6 +43,16 @@ type PullRequestParameters struct {
 	CommitMessage string `yaml:"commit-message"`
 	PRTitle       string `yaml:"pr-title"`
 	BranchName    string `yaml:"branch-name"`
+}
+
+// DefaultRegistry holds the config items of a default registry
+type DefaultRegistry struct {
+	Type                    string   `yaml:"type"`
+	URL                     string   `yaml:"url"`
+	Username                string   `yaml:"username,omitempty"`
+	Password                string   `yaml:"password,omitempty"`
+	URLMatchRequired        bool     `yaml:"url-match-required,omitempty"`
+	URLMatchAdditionalFiles []string `yaml:"url-match-additional-files,omitempty"`
 }
 
 // UpdateDefaults holds the default config for new update definitions
@@ -59,16 +71,41 @@ type DependabotConfig struct {
 	Updates    []Update            `yaml:"updates"`
 }
 
+// Allow holds the config items of an allow definition
+type Allow struct {
+	DependencyName string `yaml:"dependency-name,omitempty"`
+	DependencyType string `yaml:"dependency-type,omitempty"`
+}
+
+// Ignore holds the config items of an ignore definition
+type Ignore struct {
+	DependencyName string   `yaml:"dependency-name"`
+	Versions       []string `yaml:"versions,omitempty"`
+	UpdateTypes    []string `yaml:"update-types,omitempty"`
+}
+
 // Update holds the config items of an update definition
 type Update struct {
 	PackageEcosystem              string        `yaml:"package-ecosystem"`
 	Directory                     string        `yaml:"directory"`
-	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution,omitempty"`
-	Registries                    []string      `yaml:"registries,omitempty"`
 	Schedule                      Schedule      `yaml:"schedule,omitempty"`
+	Registries                    []string      `yaml:"registries,omitempty"`
 	CommitMessage                 CommitMessage `yaml:"commit-message,omitempty"`
 	OpenPullRequestsLimit         int           `yaml:"open-pull-requests-limit,omitempty"`
-	RebaseStrategy                string        `yaml:"rebase-strategy,omitempty"`
+	Assignees                     []string      `yaml:"assignees,omitempty"`
+	Allow                         []Allow       `yaml:"allow,omitempty"`
+	Ignore                        []Ignore      `yaml:"ignore,omitempty"`
+	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution,omitempty"`
+	Labels                        []string      `yaml:"labels,omitempty"`
+	Milestone                     int           `yaml:"milestone,omitempty"`
+	PullRequestBranchName         struct {
+		Separator string `yaml:"separator"`
+	} `yaml:"pull-request-branch-name,omitempty"`
+	RebaseStrategy     string   `yaml:"rebase-strategy,omitempty"`
+	Reviewers          []string `yaml:"reviewers,omitempty"`
+	TargetBranch       string   `yaml:"target-branch,omitempty"`
+	Vendor             bool     `yaml:"vendor,omitempty"`
+	VersioningStrategy string   `yaml:"versioning-strategy,omitempty"`
 }
 
 // Registry holds the config items of a registry definition
@@ -111,6 +148,17 @@ type UpdateInfo struct {
 	Directory string
 	File      string
 }
+
+// LoadFileContentParameters holds all parameters needed for the LoadFileContent function implementations.
+type LoadFileContentParameters struct {
+	GitHubClient *github.Client
+	Org          string
+	Repo         string
+	Directory    string
+}
+
+// LoadFileContent is a function type for loading the content of a file.
+type LoadFileContent func(file string, params LoadFileContentParameters) string
 
 // Parse parses the config.yml format
 func (config *ToolConfig) Parse(data []byte) error {
@@ -165,7 +213,9 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 }
 
 // AddManifest adds config for a new manifest file to dependabot.yml
-func (config *DependabotConfig) AddManifest(manifestFile string, manifestType string, toolConfig ToolConfig, changeInfo *ChangeInfo) {
+func (config *DependabotConfig) AddManifest(manifestFile string, manifestType string, toolConfig ToolConfig,
+	changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
+) {
 	if manifestFile == "" || manifestType == "" {
 		return
 	}
@@ -179,15 +229,48 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	if manifestPath != "/" {
 		manifestPath = strings.TrimSuffix(manifestPath, "/")
 	}
+	if manifestType == "github-actions" {
+		// special case for GitHub Actions
+		manifestPath = "/"
+	}
 	updateRegistries := []string{}
 
 	// check if one or more (default) registries are defined for this manifest type
 	if defaultRegistries, containsRegistry := toolConfig.Registries[manifestType]; containsRegistry {
 		for name, defaultRegistry := range defaultRegistries {
+			if defaultRegistry.URLMatchRequired {
+				// check if registry is used for this manifest file - only add it if so
+				registryURL, err := url.Parse(defaultRegistry.URL)
+				if err != nil || registryURL.Hostname() == "" {
+					log.Printf("ERROR default registry %v has invalid URL %v", name, defaultRegistry.URL)
+					continue
+				}
+				// search the manifest file itself and - if defined - additional files
+				searchFiles := []string{manifestFile}
+				found := false
+				for _, additionalFile := range defaultRegistry.URLMatchAdditionalFiles {
+					searchFiles = append(searchFiles, filepath.Join(manifestPath, additionalFile))
+				}
+				for _, searchFile := range searchFiles {
+					fileContent := loadFileFn(searchFile, loadFileParams)
+					found = strings.Contains(fileContent, registryURL.Hostname())
+					if found {
+						break
+					}
+				}
+				if !found {
+					continue
+				}
+			}
 			updateRegistries = append(updateRegistries, name)
 			if _, contains := config.Registries[name]; !contains {
 				// registry not yet in config -> add it
-				config.Registries[name] = defaultRegistry
+				config.Registries[name] = Registry{
+					Type:     defaultRegistry.Type,
+					URL:      defaultRegistry.URL,
+					Username: defaultRegistry.Username,
+					Password: defaultRegistry.Password,
+				}
 				changeInfo.NewRegistries = append(changeInfo.NewRegistries, RegistryInfo{Type: defaultRegistry.Type, Name: name})
 			}
 		}
@@ -268,7 +351,9 @@ func (config *DependabotConfig) ToYaml() []byte {
 }
 
 // UpdateConfig updates a dependabot config with a list of manifests found and the tool's config.
-func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig) ChangeInfo {
+func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig,
+	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
+) ChangeInfo {
 	changeInfo := ChangeInfo{
 		NewRegistries: []RegistryInfo{},
 		NewUpdates:    []UpdateInfo{},
@@ -277,7 +362,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	// Iterate manifest files and check if they are covered by the current config file
 	for manifestFile, manifestType := range manifests {
 		if !config.IsManifestCovered(manifestFile, manifestType) {
-			config.AddManifest(manifestFile, manifestType, toolConfig, &changeInfo)
+			config.AddManifest(manifestFile, manifestType, toolConfig, &changeInfo, loadFileFn, loadFileParams)
 		}
 	}
 	return changeInfo
