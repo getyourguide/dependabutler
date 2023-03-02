@@ -29,7 +29,10 @@ update-defaults:
 #
 #   - if a registry is still missing in the config file, it is automatically added to the "registries" section
 #
-#   - if "url-match-required" is true, then the URL (without the protocol part) must be found in the manifest file 
+#   - if "url-match-required" is true, then the URL (without the protocol part) must be found
+#
+#     - by default, the manifest file is searched
+#     - additional files (in the same directory) can be defined using "url-match-additional-files"
 #
 registries:
   npm:
@@ -38,6 +41,9 @@ registries:
       url: https://just.an.example.com/npm/private/
       username: npmuser
       password: "${{secrets.NPM_REGISTRY_PASSWORD}}"
+      url-match-required: true
+      url-match-additional-files:
+        - package-lock.json
   docker:
     my-docker-registry:
       type: docker-registry
@@ -71,7 +77,7 @@ manifest-patterns:
   npm: "^(.*/)?package\\.json$"
   maven: "^(.*/)?pom\\.xml$"
   pip: "^(.*/)?requirements\\.txt$"
-  docker: "^(.*/)?Dockerfile$"
+  docker: "^(.*/)?([^/.]+\\.)?Dockerfile(\\.[^/.]+)?$"
   gomod: "^(.*/)?go\\.mod$"
   composer: "^(.*/)?composer\\.json$"
   gradle: "^(.*/)?build\\.gradle(\\.kts)?$"
