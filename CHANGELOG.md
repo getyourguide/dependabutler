@@ -15,3 +15,7 @@ Initial version.
 - Ignoring archived and empty repositories.
 
 - Updated sample config files (new options, improved patterns).
+
+## v0.2.1
+
+- Added manifest type specific configuration to allow overriding default update settings.
