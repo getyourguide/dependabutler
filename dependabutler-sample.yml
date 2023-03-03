@@ -3,7 +3,7 @@
 #
 
 #
-# default settings for new "update" entities
+# default settings for *all* new "update" entities
 #
 #   - all properties are optional
 #
@@ -12,15 +12,29 @@
 #
 update-defaults:
   schedule:
-    interval: weekly
-    day: wednesday
-    time: 09:00
+    interval: daily
     timezone: Europe/Berlin
   commit-message:
     prefix: "[dependabutler] "
   open-pull-requests-limit: 10
-  insecure-external-code-execution: allow
   rebase-strategy: auto
+
+#
+# default settings for new "update" entities of a *specific* manifest type
+#
+#   - all properties are optional
+#
+#   - properties are applied in addition to those in the update-defaults section
+#
+#   - properties with sub-properties (schedule, commit-message) are overwritten as a whole
+#
+update-overrides:
+  pip:
+    insecure-external-code-execution: allow
+  github-actions:
+    schedule:
+      interval: weekly
+      day: wednesday
 
 #
 # default registries

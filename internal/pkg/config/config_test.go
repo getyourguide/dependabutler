@@ -21,6 +21,12 @@ update-defaults:
   open-pull-requests-limit: 10
   insecure-external-code-execution: allow
 
+update-overrides:
+  docker:
+    schedule:
+      interval: weekly
+      time: 08:00
+
 registries:
   npm:
     npm-reg:
@@ -49,6 +55,14 @@ registries:
 						Interval: "daily",
 						Time:     "06:00",
 						Timezone: "Europe/Berlin",
+					},
+				},
+				UpdateOverrides: map[string]UpdateDefaults{
+					"docker": {
+						Schedule: Schedule{
+							Interval: "weekly",
+							Time:     "08:00",
+						},
 					},
 				},
 				Registries: map[string]DefaultRegistries{
@@ -176,21 +190,29 @@ func TestAddManifest(t *testing.T) {
 			},
 			OpenPullRequestsLimit: 9,
 		},
+		UpdateOverrides: map[string]UpdateDefaults{
+			"docker": {
+				Schedule: Schedule{
+					Interval: "weekly",
+				},
+			},
+		},
 		Registries: map[string]DefaultRegistries{},
 	}
 
 	for _, tt := range []struct {
-		manifestType  string
-		manifestFile  string
-		expectedCount int
-		expectedPath  string
+		manifestType     string
+		manifestFile     string
+		expectedCount    int
+		expectedPath     string
+		expectedInterval string
 	}{
-		{"", "", 0, ""},
-		{"pip", "", 0, ""},
-		{"", "requirements.txt", 0, ""},
-		{"pip", "requirements.txt", 1, "/"},
-		{"docker", "app/Dockerfile", 2, "/app"},
-		{"docker", "otherapp/sub/folder/Dockerfile", 3, "/otherapp/sub/folder"},
+		{"", "", 0, "", ""},
+		{"pip", "", 0, "", ""},
+		{"", "requirements.txt", 0, "", ""},
+		{"pip", "requirements.txt", 1, "/", "daily"},
+		{"docker", "app/Dockerfile", 2, "/app", "weekly"},
+		{"docker", "otherapp/sub/folder/Dockerfile", 3, "/otherapp/sub/folder", "weekly"},
 	} {
 		changeInfo := ChangeInfo{}
 		config.AddManifest(tt.manifestFile, tt.manifestType, toolConfig, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
@@ -209,6 +231,16 @@ func TestAddManifest(t *testing.T) {
 			}
 			if !foundPath {
 				t.Errorf("AddManifest(%v, %v) failed; couldn't find path %v after adding", tt.manifestType, tt.manifestFile, tt.expectedPath)
+			}
+		}
+		if tt.expectedInterval != "" {
+			// check if the expected path has been added, for the manifest type
+			for _, update := range config.Updates {
+				if update.PackageEcosystem == tt.manifestType && update.Directory == tt.expectedPath {
+					if tt.expectedInterval != update.Schedule.Interval {
+						t.Errorf("AddManifest(%v, %v) failed; expected interval %v got %v", tt.manifestType, tt.manifestFile, tt.expectedInterval, update.Schedule.Interval)
+					}
+				}
 			}
 		}
 	}
