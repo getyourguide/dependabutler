@@ -28,6 +28,7 @@ func InitializePatterns(patterns map[string]string) {
 // ToolConfig holds the tool's configuration defined in config.yml
 type ToolConfig struct {
 	UpdateDefaults        UpdateDefaults               `yaml:"update-defaults"`
+	UpdateOverrides       map[string]UpdateDefaults    `yaml:"update-overrides"`
 	Registries            map[string]DefaultRegistries `yaml:"registries"`
 	ManifestPatterns      map[string]string            `yaml:"manifest-patterns"`
 	PullRequestParameters PullRequestParameters        `yaml:"pull-request-parameters"`
@@ -275,21 +276,39 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 			}
 		}
 	}
-	// create the new update section and add it
+	// create the new update section using the default properties
 	update := Update{
-		PackageEcosystem:      manifestType,
-		Directory:             manifestPath,
-		Schedule:              toolConfig.UpdateDefaults.Schedule,
-		CommitMessage:         toolConfig.UpdateDefaults.CommitMessage,
-		OpenPullRequestsLimit: toolConfig.UpdateDefaults.OpenPullRequestsLimit,
-		RebaseStrategy:        toolConfig.UpdateDefaults.RebaseStrategy,
+		PackageEcosystem:              manifestType,
+		Directory:                     manifestPath,
+		Schedule:                      toolConfig.UpdateDefaults.Schedule,
+		CommitMessage:                 toolConfig.UpdateDefaults.CommitMessage,
+		OpenPullRequestsLimit:         toolConfig.UpdateDefaults.OpenPullRequestsLimit,
+		RebaseStrategy:                toolConfig.UpdateDefaults.RebaseStrategy,
+		InsecureExternalCodeExecution: toolConfig.UpdateDefaults.InsecureExternalCodeExecution,
 	}
-	if manifestType == "pip" {
-		update.InsecureExternalCodeExecution = toolConfig.UpdateDefaults.InsecureExternalCodeExecution
+	// apply override properties, if defined
+	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
+		if overrides.Schedule != (Schedule{}) {
+			update.Schedule = overrides.Schedule
+		}
+		if overrides.CommitMessage != (CommitMessage{}) {
+			update.CommitMessage = overrides.CommitMessage
+		}
+		if overrides.OpenPullRequestsLimit != 0 {
+			update.OpenPullRequestsLimit = overrides.OpenPullRequestsLimit
+		}
+		if overrides.RebaseStrategy != "" {
+			update.RebaseStrategy = overrides.RebaseStrategy
+		}
+		if overrides.InsecureExternalCodeExecution != "" {
+			update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
+		}
 	}
+	// add new registries if required
 	if len(updateRegistries) > 0 {
 		update.Registries = updateRegistries
 	}
+	// add the update block, to the config
 	config.Updates = append(config.Updates, update)
 	changeInfo.NewUpdates = append(changeInfo.NewUpdates, UpdateInfo{Type: manifestType, Directory: manifestPath, File: manifestFile})
 }
