@@ -216,8 +216,7 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 		}
 	}
 	lines = append(lines, "")
-	lines = append(lines, "#### notes")
+	lines = append(lines, "#### note")
 	lines = append(lines, "* Check the default settings applied (schedule, open-pull-requests-limit, etc.) and change if required.")
-	lines = append(lines, "* You may also combine several **update** sections into one, by using a common base path, if it makes sense.")
 	return strings.Join(lines, "\n")
 }
