@@ -80,7 +80,7 @@ func CreatePullRequest(client *github.Client, org string, repo string, baseBranc
 	// get the branch name
 	branchName := prParams.BranchName
 	if prParams.BranchNameRandomSuffix {
-		randToken, err := util.RandToken(32)
+		randToken, err := util.RandToken(16)
 		if err != nil {
 			return err
 		}
