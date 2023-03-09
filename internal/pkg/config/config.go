@@ -215,6 +215,49 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 	return false
 }
 
+// IsRegistryUsed returns if a registry is used by a manifest file
+func IsRegistryUsed(manifestFile string, manifestPath string, defaultRegistry DefaultRegistry,
+	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
+) bool {
+	// check if registry is used for this manifest file - only add it if so
+	registryURL, err := url.Parse(defaultRegistry.URL)
+	if err != nil || registryURL.Hostname() == "" {
+		log.Printf("ERROR default registry has invalid URL %v", defaultRegistry.URL)
+		return false
+	}
+	// search the manifest file itself and - if defined - additional files
+	searchFiles := []string{manifestFile}
+	for _, additionalFile := range defaultRegistry.URLMatchAdditionalFiles {
+		searchFiles = append(searchFiles, filepath.Join(manifestPath, additionalFile))
+	}
+	for _, searchFile := range searchFiles {
+		fileContent := loadFileFn(searchFile, loadFileParams)
+		if strings.Contains(fileContent, registryURL.Hostname()) {
+			return true
+		}
+	}
+	return false
+}
+
+// ApplyOverrides updates a config for an Update, using overriden values
+func ApplyOverrides(update Update, overrides UpdateDefaults) {
+	if overrides.Schedule != (Schedule{}) {
+		update.Schedule = overrides.Schedule
+	}
+	if overrides.CommitMessage != (CommitMessage{}) {
+		update.CommitMessage = overrides.CommitMessage
+	}
+	if overrides.OpenPullRequestsLimit != 0 {
+		update.OpenPullRequestsLimit = overrides.OpenPullRequestsLimit
+	}
+	if overrides.RebaseStrategy != "" {
+		update.RebaseStrategy = overrides.RebaseStrategy
+	}
+	if overrides.InsecureExternalCodeExecution != "" {
+		update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
+	}
+}
+
 // AddManifest adds config for a new manifest file to dependabot.yml
 func (config *DependabotConfig) AddManifest(manifestFile string, manifestType string, toolConfig ToolConfig,
 	changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
@@ -243,24 +286,7 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 		for name, defaultRegistry := range defaultRegistries {
 			if defaultRegistry.URLMatchRequired {
 				// check if registry is used for this manifest file - only add it if so
-				registryURL, err := url.Parse(defaultRegistry.URL)
-				if err != nil || registryURL.Hostname() == "" {
-					log.Printf("ERROR default registry %v has invalid URL %v", name, defaultRegistry.URL)
-					continue
-				}
-				// search the manifest file itself and - if defined - additional files
-				searchFiles := []string{manifestFile}
-				found := false
-				for _, additionalFile := range defaultRegistry.URLMatchAdditionalFiles {
-					searchFiles = append(searchFiles, filepath.Join(manifestPath, additionalFile))
-				}
-				for _, searchFile := range searchFiles {
-					fileContent := loadFileFn(searchFile, loadFileParams)
-					found = strings.Contains(fileContent, registryURL.Hostname())
-					if found {
-						break
-					}
-				}
+				found := IsRegistryUsed(manifestFile, manifestPath, defaultRegistry, loadFileFn, loadFileParams)
 				if !found {
 					continue
 				}
@@ -290,21 +316,7 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	}
 	// apply override properties, if defined
 	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
-		if overrides.Schedule != (Schedule{}) {
-			update.Schedule = overrides.Schedule
-		}
-		if overrides.CommitMessage != (CommitMessage{}) {
-			update.CommitMessage = overrides.CommitMessage
-		}
-		if overrides.OpenPullRequestsLimit != 0 {
-			update.OpenPullRequestsLimit = overrides.OpenPullRequestsLimit
-		}
-		if overrides.RebaseStrategy != "" {
-			update.RebaseStrategy = overrides.RebaseStrategy
-		}
-		if overrides.InsecureExternalCodeExecution != "" {
-			update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
-		}
+		ApplyOverrides(update, overrides)
 	}
 	// remove "insecure-external-code-execution" if it is not allowed
 	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
