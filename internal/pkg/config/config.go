@@ -240,7 +240,7 @@ func IsRegistryUsed(manifestFile string, manifestPath string, defaultRegistry De
 }
 
 // ApplyOverrides updates a config for an Update, using overriden values
-func ApplyOverrides(update Update, overrides UpdateDefaults) {
+func ApplyOverrides(update *Update, overrides UpdateDefaults) {
 	if overrides.Schedule != (Schedule{}) {
 		update.Schedule = overrides.Schedule
 	}
@@ -316,7 +316,7 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	}
 	// apply override properties, if defined
 	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
-		ApplyOverrides(update, overrides)
+		ApplyOverrides(&update, overrides)
 	}
 	// remove "insecure-external-code-execution" if it is not allowed
 	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
