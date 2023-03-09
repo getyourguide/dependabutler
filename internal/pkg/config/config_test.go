@@ -165,7 +165,7 @@ func TestIsManifestCovered(t *testing.T) {
 		{"pip", "requirements.txt", false},
 		{"npm", "npm/stuff/here/package.json", true},
 		{"npm", "npm/stuff/here/sub/dir/package.json", true},
-		{"npm", "npm/stuff/nothere/package.json", false},
+		{"npm", "npm/stuff/not_here/package.json", false},
 		{"github-actions", ".github/workflows/action.yml", true},
 	} {
 		got := config.IsManifestCovered(tt.manifestFile, tt.manifestType)
@@ -175,7 +175,7 @@ func TestIsManifestCovered(t *testing.T) {
 	}
 }
 
-func LoadFileContentDummy(file string, params LoadFileContentParameters) string {
+func LoadFileContentDummy(_ string, _ LoadFileContentParameters) string {
 	return "dummy"
 }
 
@@ -212,7 +212,7 @@ func TestAddManifest(t *testing.T) {
 		{"", "requirements.txt", 0, "", ""},
 		{"pip", "requirements.txt", 1, "/", "daily"},
 		{"docker", "app/Dockerfile", 2, "/app", "weekly"},
-		{"docker", "otherapp/sub/folder/Dockerfile", 3, "/otherapp/sub/folder", "weekly"},
+		{"docker", "other_app/sub/folder/Dockerfile", 3, "/other_app/sub/folder", "weekly"},
 	} {
 		changeInfo := ChangeInfo{}
 		config.AddManifest(tt.manifestFile, tt.manifestType, toolConfig, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})

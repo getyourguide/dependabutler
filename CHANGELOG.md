@@ -19,3 +19,9 @@ Initial version.
 ## v0.2.1
 
 - Added manifest type specific configuration to allow overriding default update settings.
+
+## v0.2.2
+
+- Added config parameter for adding a random suffix to PR branch names (`branch-name-random-suffix`).
+- Added check to avoid `insecure-external-code-execution` being set on invalid manifest types.
+- Code cleanup.

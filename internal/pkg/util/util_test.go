@@ -17,7 +17,7 @@ func TestCompileRePattern(t *testing.T) {
 	} {
 		got := CompileRePattern(tt.pattern)
 		if tt.expectedNil != (got == nil) {
-			t.Errorf("CompileRePattern() failed; expected %t, got %t", tt.expectedNil, (got == nil))
+			t.Errorf("CompileRePattern() failed; expected %t, got %t", tt.expectedNil, got == nil)
 		}
 		if got != nil && !got.MatchString(tt.matchSample) {
 			t.Errorf("CompileRePattern() failed; sample %v not matching", tt.matchSample)
@@ -26,8 +26,8 @@ func TestCompileRePattern(t *testing.T) {
 }
 
 func TestGetEnvParameter(t *testing.T) {
-	os.Setenv("TEST_ENV_VAR_NAME_1337_NONEMPTY", "value")
-	os.Setenv("TEST_ENV_VAR_NAME_1337_EMPTY", "")
+	_ = os.Setenv("TEST_ENV_VAR_NAME_1337_NONEMPTY", "value")
+	_ = os.Setenv("TEST_ENV_VAR_NAME_1337_EMPTY", "")
 	for _, tt := range []struct {
 		name      string
 		mandatory bool
@@ -43,6 +43,6 @@ func TestGetEnvParameter(t *testing.T) {
 			t.Errorf("GetEnvParameter() failed; expected %v, got %v", tt.expected, got)
 		}
 	}
-	os.Unsetenv("TEST_ENV_VAR_NAME_1337_NONEMPTY")
-	os.Unsetenv("TEST_ENV_VAR_NAME_1337_EMPTY")
+	_ = os.Unsetenv("TEST_ENV_VAR_NAME_1337_NONEMPTY")
+	_ = os.Unsetenv("TEST_ENV_VAR_NAME_1337_EMPTY")
 }

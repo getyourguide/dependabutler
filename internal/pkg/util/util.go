@@ -3,6 +3,8 @@ package util
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"log"
 	"os"
@@ -16,16 +18,6 @@ func GetEnvParameter(name string, mandatory bool) string {
 		log.Printf("Mandatory environment parameter not set: %v", name)
 	}
 	return value
-}
-
-// Contains checks if a slice contains a specific value
-func Contains[T comparable](s []T, e T) bool {
-	for i := range s {
-		if s[i] == e {
-			return true
-		}
-	}
-	return false
 }
 
 // CompileRePattern compiles a string containing a regular expression
@@ -70,11 +62,25 @@ func ReadLinesFromFile(name string) []string {
 		log.Printf("ERROR Could not open file %v : %v\n", name, err)
 		return nil
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			log.Printf("ERROR Could not close file %v : %v\n", name, err)
+		}
+	}(file)
 	var lines []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
 	return lines
+}
+
+// RandToken generates a random hex value.
+func RandToken(n int) (string, error) {
+	bytes := make([]byte, n)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }
