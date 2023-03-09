@@ -76,6 +76,22 @@ func GetFileContent(client *github.Client, org string, repo string, path string)
 // CreatePullRequest creates a PR for an update of dependabot.yml
 func CreatePullRequest(client *github.Client, org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
 	prParams := toolConfig.PullRequestParameters
+	ctx := context.Background()
+
+	// check if there already is a PR open, from dependabutler
+	opts := github.IssueListByRepoOptions{
+		State:  "open",
+		Labels: []string{"dependabutler"},
+	}
+	prFound, _, err := client.Issues.ListByRepo(ctx, org, repo, &opts)
+	if err != nil {
+		return err
+	}
+	if len(prFound) > 0 {
+		prLink := *(prFound[0].HTMLURL)
+		log.Printf("WARN  There's an open PR already on repo %v. Close or merge it first. %v", repo, prLink)
+		return nil
+	}
 
 	// get the branch name
 	branchName := prParams.BranchName
@@ -111,8 +127,12 @@ func CreatePullRequest(client *github.Client, org string, repo string, baseBranc
 	newPR.Body = &prDesc
 	newPR.Head = &branchName
 	newPR.Base = &baseBranch
-	ctx := context.Background()
 	pr, _, err := client.PullRequests.Create(ctx, org, repo, newPR)
+	if err != nil {
+		return err
+	}
+	labels := []string{"dependabutler"}
+	_, _, err = client.Issues.AddLabelsToIssue(ctx, org, repo, *pr.Number, labels)
 	if err != nil {
 		return err
 	}
