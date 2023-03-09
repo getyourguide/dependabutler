@@ -17,7 +17,7 @@ import (
 
 var manifestFilePatterns map[string]*regexp.Regexp
 
-// InitializePatterns precompiles manifest file name patterns
+// InitializePatterns pre-compiles manifest file name patterns
 func InitializePatterns(patterns map[string]string) {
 	manifestFilePatterns = map[string]*regexp.Regexp{}
 	for key, pattern := range patterns {
@@ -39,11 +39,12 @@ type DefaultRegistries map[string]DefaultRegistry
 
 // PullRequestParameters holds the parameters for PRs created by dependabutler
 type PullRequestParameters struct {
-	AuthorName    string `yaml:"author-name"`
-	AuthorEmail   string `yaml:"author-email"`
-	CommitMessage string `yaml:"commit-message"`
-	PRTitle       string `yaml:"pr-title"`
-	BranchName    string `yaml:"branch-name"`
+	AuthorName             string `yaml:"author-name"`
+	AuthorEmail            string `yaml:"author-email"`
+	CommitMessage          string `yaml:"commit-message"`
+	PRTitle                string `yaml:"pr-title"`
+	BranchName             string `yaml:"branch-name"`
+	BranchNameRandomSuffix bool   `yaml:"branch-name-random-suffix"`
 }
 
 // DefaultRegistry holds the config items of a default registry
@@ -234,7 +235,7 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 		// special case for GitHub Actions
 		manifestPath = "/"
 	}
-	updateRegistries := []string{}
+	updateRegistries := make([]string, 0)
 
 	// check if one or more (default) registries are defined for this manifest type
 	if defaultRegistries, containsRegistry := toolConfig.Registries[manifestType]; containsRegistry {
@@ -304,6 +305,11 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 			update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
 		}
 	}
+	// remove "insecure-external-code-execution" if it is not allowed
+	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
+		update.InsecureExternalCodeExecution = ""
+	}
+
 	// add new registries if required
 	if len(updateRegistries) > 0 {
 		update.Registries = updateRegistries
@@ -313,7 +319,7 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	changeInfo.NewUpdates = append(changeInfo.NewUpdates, UpdateInfo{Type: manifestType, Directory: manifestPath, File: manifestFile})
 }
 
-// GetManifestType returns the type of a manifest file, if any.
+// GetManifestType returns the type of manifest file, if any.
 func GetManifestType(fullPath string) string {
 	for manifestType, re := range manifestFilePatterns {
 		if re.MatchString(fullPath) {

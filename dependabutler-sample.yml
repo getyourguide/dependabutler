@@ -68,7 +68,7 @@ registries:
     my-other-docker-registry:
       type: docker-registry
       url: https://docker.other.just.an.example.com
-      username: otherdockeruser
+      username: dockeruser2
       password: "${{secrets.OTHER_DOCKER_REGISTRY_PASSWORD}}"
       url-match-required: true
 

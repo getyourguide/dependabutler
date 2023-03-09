@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/config"
+	"github.com/getyourguide/dependabutler/internal/pkg/util"
 	"github.com/google/go-github/v50/github"
 	"golang.org/x/oauth2"
 )
@@ -22,33 +23,6 @@ func GetGitHubClient(accessToken string) *github.Client {
 	)
 	tc := oauth2.NewClient(ctx, ts)
 	return github.NewClient(tc)
-}
-
-// GetRepositories returns a map of GitHub repos
-func GetRepositories(client *github.Client, org string) map[string]github.Repository {
-	ctx := context.Background()
-	options := &github.RepositoryListByOrgOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-	// get all pages of results
-	var allRepos []*github.Repository
-	for {
-		repos, resp, err := client.Repositories.ListByOrg(ctx, org, options)
-		if err != nil {
-			log.Printf("ERROR Got error when requesting GitHub repos.\n%v", err)
-			return nil
-		}
-		allRepos = append(allRepos, repos...)
-		if resp.NextPage == 0 {
-			break
-		}
-		options.Page = resp.NextPage
-	}
-	result := map[string]github.Repository{}
-	for _, repo := range allRepos {
-		result[*repo.Name] = *repo
-	}
-	return result
 }
 
 // GetRepository gets a repository object.
@@ -75,7 +49,7 @@ func GetRepoFileList(client *github.Client, org string, repo string, defaultBran
 		log.Printf("ERROR Got error when requesting GitHub repo tree.\n%v", err)
 		return nil
 	}
-	result := []string{}
+	result := make([]string, 0)
 	for _, entry := range tree.Entries {
 		result = append(result, *entry.Path)
 	}
@@ -103,8 +77,18 @@ func GetFileContent(client *github.Client, org string, repo string, path string)
 func CreatePullRequest(client *github.Client, org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
 	prParams := toolConfig.PullRequestParameters
 
+	// get the branch name
+	branchName := prParams.BranchName
+	if prParams.BranchNameRandomSuffix {
+		randToken, err := util.RandToken(32)
+		if err != nil {
+			return err
+		}
+		branchName = fmt.Sprintf("%v-%v", prParams.BranchName, randToken)
+	}
+
 	// get the reference (existing or new)
-	ref, err := getReference(client, org, repo, baseBranch, prParams.BranchName)
+	ref, err := getReference(client, org, repo, baseBranch, branchName)
 	if err != nil {
 		return err
 	}
@@ -125,7 +109,7 @@ func CreatePullRequest(client *github.Client, org string, repo string, baseBranc
 	newPR := &github.NewPullRequest{}
 	newPR.Title = &prParams.PRTitle
 	newPR.Body = &prDesc
-	newPR.Head = &prParams.BranchName
+	newPR.Head = &branchName
 	newPR.Base = &baseBranch
 	ctx := context.Background()
 	pr, _, err := client.PullRequests.Create(ctx, org, repo, newPR)
@@ -139,7 +123,7 @@ func CreatePullRequest(client *github.Client, org string, repo string, baseBranc
 func getTree(client *github.Client, ref *github.Reference, org string, repo string, file string, content string) (*github.Tree, error) {
 	ctx := context.Background()
 	entries := []*github.TreeEntry{
-		{Path: github.String(file), Type: github.String("blob"), Content: github.String(string(content)), Mode: github.String("100644")},
+		{Path: github.String(file), Type: github.String("blob"), Content: github.String(content), Mode: github.String("100644")},
 	}
 	tree, _, err := client.Git.CreateTree(ctx, org, repo, *ref.Object.SHA, entries)
 	if err != nil {
