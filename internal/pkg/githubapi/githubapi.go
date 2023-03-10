@@ -123,11 +123,15 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 		return err
 	}
 
+	ctx := context.Background()
 	if existingPr != nil {
+		existingPr.Body = &prDesc
+		if _, _, err := client.PullRequests.Edit(ctx, org, repo, *existingPr.Number, existingPr); err != nil {
+			return err
+		}
 		log.Printf("INFO  PR successfully updated: %s\n", existingPr.GetHTMLURL())
 	} else {
 		// Create a new PR for the branch. In case of an existing PR, no further action is needed.
-		ctx := context.Background()
 		newPR := &github.NewPullRequest{}
 		newPR.Title = &prParams.PRTitle
 		newPR.Body = &prDesc
