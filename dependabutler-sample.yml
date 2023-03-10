@@ -82,6 +82,7 @@ pull-request-parameters:
   pr-title: "[dependabutler] update .github/dependabot.yml"
   branch-name: "dependabutler-update"
   branch-name-random-suffix: true
+  sleep-after-pr-action: 2
 
 #
 # patterns for detecting manifest files

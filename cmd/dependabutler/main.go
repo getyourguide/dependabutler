@@ -15,7 +15,7 @@ import (
 
 // LoadRemoteFileContent is the implementation of LoadFileContent, for remote files (GitHub).
 func LoadRemoteFileContent(file string, params config.LoadFileContentParameters) string {
-	content, err := githubapi.GetFileContent(params.GitHubClient, params.Org, params.Repo, file)
+	content, err := githubapi.GetFileContent(params.GitHubClient, params.Org, params.Repo, file, "")
 	if err != nil {
 		log.Printf("WARN  Could not content of file %v: %v", file, err)
 		return ""
@@ -86,7 +86,7 @@ func processRemoteRepo(toolConfig config.ToolConfig, execute bool, org string, r
 		log.Printf("INFO  Repository %v is archived. Nothing to do.", repo)
 		return
 	}
-	currentConfig, err := githubapi.GetFileContent(gitHubClient, org, repo, ".github/dependabot.yml")
+	currentConfig, err := githubapi.GetFileContent(gitHubClient, org, repo, ".github/dependabot.yml", "")
 	if err != nil {
 		if strings.Contains(err.Error(), "This repository is empty") {
 			log.Printf("INFO  Repository %v is empty. Nothing to do.", repo)
@@ -104,7 +104,7 @@ func processRemoteRepo(toolConfig config.ToolConfig, execute bool, org string, r
 	if yamlContent != nil {
 		prDesc := githubapi.CreatePRDescription(changeInfo)
 		if execute {
-			if err := githubapi.CreatePullRequest(gitHubClient, org, repo, baseBranch, prDesc, string(yamlContent), toolConfig); err != nil {
+			if err := githubapi.CreateOrUpdatePullRequest(gitHubClient, org, repo, baseBranch, prDesc, string(yamlContent), toolConfig); err != nil {
 				if strings.Contains(err.Error(), "pull request already exists") {
 					log.Printf("WARN  There's an open pull request already on repo %v. Close or merge it first.", repo)
 				} else {

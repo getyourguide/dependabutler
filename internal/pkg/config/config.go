@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
@@ -45,6 +46,7 @@ type PullRequestParameters struct {
 	PRTitle                string `yaml:"pr-title"`
 	BranchName             string `yaml:"branch-name"`
 	BranchNameRandomSuffix bool   `yaml:"branch-name-random-suffix"`
+	SleepAfterPRAction     int    `yaml:"sleep-after-pr-action"`
 }
 
 // DefaultRegistry holds the config items of a default registry
@@ -208,11 +210,49 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 			log.Printf("WARN  Invalid dependabot config: %v", update)
 			return false
 		}
-		if ecosystem == manifestType && strings.HasPrefix("/"+manifestFile, directory) {
+		manifestPath := GetManifestPath(manifestFile, manifestType)
+		if ecosystem == manifestType && manifestPath == directory {
 			return true
 		}
 	}
 	return false
+}
+
+// IsRegistryUsed returns if a registry is used by a manifest file
+func IsRegistryUsed(manifestFile string, manifestPath string, defaultRegistry DefaultRegistry,
+	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
+) bool {
+	// check if registry is used for this manifest file - only add it if so
+	registryURL, err := url.Parse(defaultRegistry.URL)
+	if err != nil || registryURL.Hostname() == "" {
+		log.Printf("ERROR default registry has invalid URL %v", defaultRegistry.URL)
+		return false
+	}
+	// search the manifest file itself and - if defined - additional files
+	searchFiles := []string{manifestFile}
+	for _, additionalFile := range defaultRegistry.URLMatchAdditionalFiles {
+		searchFiles = append(searchFiles, filepath.Join(manifestPath, additionalFile))
+	}
+	for _, searchFile := range searchFiles {
+		fileContent := loadFileFn(searchFile, loadFileParams)
+		if strings.Contains(fileContent, registryURL.Hostname()) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetManifestPath returns the path of the absolute path of a manifest file
+func GetManifestPath(manifestFile string, manifestType string) string {
+	if manifestType == "github-actions" {
+		// special case for GitHub Actions
+		return "/"
+	}
+	manifestPath, _ := filepath.Split("/" + manifestFile)
+	if manifestPath != "/" {
+		manifestPath = strings.TrimSuffix(manifestPath, "/")
+	}
+	return manifestPath
 }
 
 // AddManifest adds config for a new manifest file to dependabot.yml
@@ -228,14 +268,7 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	if config.Registries == nil {
 		config.Registries = map[string]Registry{}
 	}
-	manifestPath, _ := filepath.Split("/" + manifestFile)
-	if manifestPath != "/" {
-		manifestPath = strings.TrimSuffix(manifestPath, "/")
-	}
-	if manifestType == "github-actions" {
-		// special case for GitHub Actions
-		manifestPath = "/"
-	}
+	manifestPath := GetManifestPath(manifestFile, manifestType)
 	updateRegistries := make([]string, 0)
 
 	// check if one or more (default) registries are defined for this manifest type
@@ -243,24 +276,7 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 		for name, defaultRegistry := range defaultRegistries {
 			if defaultRegistry.URLMatchRequired {
 				// check if registry is used for this manifest file - only add it if so
-				registryURL, err := url.Parse(defaultRegistry.URL)
-				if err != nil || registryURL.Hostname() == "" {
-					log.Printf("ERROR default registry %v has invalid URL %v", name, defaultRegistry.URL)
-					continue
-				}
-				// search the manifest file itself and - if defined - additional files
-				searchFiles := []string{manifestFile}
-				found := false
-				for _, additionalFile := range defaultRegistry.URLMatchAdditionalFiles {
-					searchFiles = append(searchFiles, filepath.Join(manifestPath, additionalFile))
-				}
-				for _, searchFile := range searchFiles {
-					fileContent := loadFileFn(searchFile, loadFileParams)
-					found = strings.Contains(fileContent, registryURL.Hostname())
-					if found {
-						break
-					}
-				}
+				found := IsRegistryUsed(manifestFile, manifestPath, defaultRegistry, loadFileFn, loadFileParams)
 				if !found {
 					continue
 				}
@@ -290,26 +306,9 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	}
 	// apply override properties, if defined
 	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
-		if overrides.Schedule != (Schedule{}) {
-			update.Schedule = overrides.Schedule
-		}
-		if overrides.CommitMessage != (CommitMessage{}) {
-			update.CommitMessage = overrides.CommitMessage
-		}
-		if overrides.OpenPullRequestsLimit != 0 {
-			update.OpenPullRequestsLimit = overrides.OpenPullRequestsLimit
-		}
-		if overrides.RebaseStrategy != "" {
-			update.RebaseStrategy = overrides.RebaseStrategy
-		}
-		if overrides.InsecureExternalCodeExecution != "" {
-			update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
-		}
+		applyOverrides(&update, overrides)
 	}
-	// remove "insecure-external-code-execution" if it is not allowed
-	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
-		update.InsecureExternalCodeExecution = ""
-	}
+	fixUpdateConfig(&update, manifestType)
 
 	// add new registries if required
 	if len(updateRegistries) > 0 {
@@ -362,6 +361,16 @@ func ScanLocalDirectory(baseDirectory string, directory string, manifests map[st
 
 // ToYaml returns a YAML representation of a dependabot config.
 func (config *DependabotConfig) ToYaml() []byte {
+	// sort entries in update list, to avoid commits due to changed order only
+	// nothing to be done for registries, as yamlv3 marshals maps sorted by key
+	if len(config.Updates) > 1 {
+		sort.Slice(config.Updates, func(i, j int) bool {
+			a := config.Updates[i]
+			b := config.Updates[j]
+			return (a.PackageEcosystem < b.PackageEcosystem) ||
+				(a.PackageEcosystem == b.PackageEcosystem && a.Directory < b.Directory)
+		})
+	}
 	buf := new(bytes.Buffer)
 	encoder := yaml.NewEncoder(buf)
 	encoder.SetIndent(2)
@@ -392,4 +401,31 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		}
 	}
 	return changeInfo
+}
+
+// applyOverrides updates a config for an Update, using overridden values
+func applyOverrides(update *Update, overrides UpdateDefaults) {
+	if overrides.Schedule != (Schedule{}) {
+		update.Schedule = overrides.Schedule
+	}
+	if overrides.CommitMessage != (CommitMessage{}) {
+		update.CommitMessage = overrides.CommitMessage
+	}
+	if overrides.OpenPullRequestsLimit != 0 {
+		update.OpenPullRequestsLimit = overrides.OpenPullRequestsLimit
+	}
+	if overrides.RebaseStrategy != "" {
+		update.RebaseStrategy = overrides.RebaseStrategy
+	}
+	if overrides.InsecureExternalCodeExecution != "" {
+		update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
+	}
+}
+
+// fixUpdateConfig fixes the config for an Update, if necessary
+func fixUpdateConfig(update *Update, manifestType string) {
+	// remove "insecure-external-code-execution" if it is not allowed
+	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
+		update.InsecureExternalCodeExecution = ""
+	}
 }

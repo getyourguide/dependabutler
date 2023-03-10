@@ -57,9 +57,13 @@ func GetRepoFileList(client *github.Client, org string, repo string, defaultBran
 }
 
 // GetFileContent returns the content of a file
-func GetFileContent(client *github.Client, org string, repo string, path string) ([]byte, error) {
+func GetFileContent(client *github.Client, org string, repo string, path string, branchName string) ([]byte, error) {
 	ctx := context.Background()
-	content, _, _, err := client.Repositories.GetContents(ctx, org, repo, path, &github.RepositoryContentGetOptions{})
+	opts := &github.RepositoryContentGetOptions{}
+	if branchName != "" {
+		opts.Ref = branchName
+	}
+	content, _, _, err := client.Repositories.GetContents(ctx, org, repo, path, opts)
 	if err != nil && !strings.Contains(err.Error(), "404 Not Found") {
 		return nil, err
 	}
@@ -73,27 +77,41 @@ func GetFileContent(client *github.Client, org string, repo string, path string)
 	return bytes.NewBufferString(fileContent).Bytes(), nil
 }
 
-// CreatePullRequest creates a PR for an update of dependabot.yml
-func CreatePullRequest(client *github.Client, org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
+// CreateOrUpdatePullRequest creates or updates a PR for changes in dependabot.yml
+func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
 	prParams := toolConfig.PullRequestParameters
 
-	// get the branch name
-	branchName := prParams.BranchName
-	if prParams.BranchNameRandomSuffix {
-		randToken, err := util.RandToken(16)
+	// Check if there already is a PR open, from dependabutler. If so, re-use its branch.
+	existingPr, err := getExistingPr(client, org, repo)
+	if err != nil {
+		return err
+	}
+	var branchName string
+	if existingPr != nil {
+		branchName = *existingPr.Head.Ref
+		// In case a PR exists, check if the file content has changed meanwhile.
+		prContent, err := GetFileContent(client, org, repo, ".github/dependabot.yml", branchName)
 		if err != nil {
 			return err
 		}
-		branchName = fmt.Sprintf("%v-%v", prParams.BranchName, randToken)
+		if string(prContent) == content {
+			log.Printf("INFO  Found open PR, no update required: %v", *existingPr.HTMLURL)
+			return nil
+		}
+	} else {
+		branchName, err = getNewBranchName(prParams)
+		if err != nil {
+			return err
+		}
 	}
 
-	// get the reference (existing or new)
+	// Get the reference (existing or new).
 	ref, err := getReference(client, org, repo, baseBranch, branchName)
 	if err != nil {
 		return err
 	}
 
-	// create a tree with one entry, for the commit
+	// Create a tree with one entry, for the commit.
 	tree, err := getTree(client, ref, org, repo, ".github/dependabot.yml", content)
 	if err != nil {
 		return err
@@ -105,19 +123,64 @@ func CreatePullRequest(client *github.Client, org string, repo string, baseBranc
 		return err
 	}
 
-	// Finally, create a PR.
-	newPR := &github.NewPullRequest{}
-	newPR.Title = &prParams.PRTitle
-	newPR.Body = &prDesc
-	newPR.Head = &branchName
-	newPR.Base = &baseBranch
 	ctx := context.Background()
-	pr, _, err := client.PullRequests.Create(ctx, org, repo, newPR)
-	if err != nil {
-		return err
+	if existingPr != nil {
+		existingPr.Body = &prDesc
+		if _, _, err := client.PullRequests.Edit(ctx, org, repo, *existingPr.Number, existingPr); err != nil {
+			return err
+		}
+		log.Printf("INFO  PR successfully updated: %s\n", existingPr.GetHTMLURL())
+	} else {
+		// Create a new PR for the branch. In case of an existing PR, no further action is needed.
+		newPR := &github.NewPullRequest{}
+		newPR.Title = &prParams.PRTitle
+		newPR.Body = &prDesc
+		newPR.Head = &branchName
+		newPR.Base = &baseBranch
+		pr, _, err := client.PullRequests.Create(ctx, org, repo, newPR)
+		if err != nil {
+			return err
+		}
+		labels := []string{"dependabutler"}
+		_, _, err = client.Issues.AddLabelsToIssue(ctx, org, repo, *pr.Number, labels)
+		if err != nil {
+			return err
+		}
+		log.Printf("INFO  PR successfully created: %s\n", pr.GetHTMLURL())
 	}
-	log.Printf("INFO  PR successfully created: %s\n", pr.GetHTMLURL())
+	sleepSeconds := toolConfig.PullRequestParameters.SleepAfterPRAction
+	if sleepSeconds > 0 {
+		// Sleep - can help to avoid issues with second rate limit.
+		time.Sleep(time.Duration(sleepSeconds) * time.Second)
+	}
 	return nil
+}
+
+// CreatePRDescription renders the body of the PR to be created.
+func CreatePRDescription(changeInfo config.ChangeInfo) string {
+	lines := []string{"### dependabutler has created this PR to update .github/dependabot.yml"}
+	if len(changeInfo.NewRegistries) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "#### 🏛 registries added")
+		lines = append(lines, "| type | name |")
+		lines = append(lines, "| - | - |")
+		for _, registry := range changeInfo.NewRegistries {
+			lines = append(lines, fmt.Sprintf("| %v | %v |", registry.Type, registry.Name))
+		}
+	}
+	if len(changeInfo.NewUpdates) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "#### ♻ updates added")
+		lines = append(lines, "| type | directory | file |")
+		lines = append(lines, "| - | - | - |")
+		for _, update := range changeInfo.NewUpdates {
+			lines = append(lines, fmt.Sprintf("| %v | %v | %v |", update.Type, update.Directory, update.File))
+		}
+	}
+	lines = append(lines, "")
+	lines = append(lines, "#### note")
+	lines = append(lines, "* Check the default settings applied (schedule, open-pull-requests-limit, etc.) and change if required.")
+	return strings.Join(lines, "\n")
 }
 
 func getTree(client *github.Client, ref *github.Reference, org string, repo string, file string, content string) (*github.Tree, error) {
@@ -178,29 +241,41 @@ func pushCommit(client *github.Client, ref *github.Reference, tree *github.Tree,
 	return nil
 }
 
-// CreatePRDescription renders the body of the PR to be created.
-func CreatePRDescription(changeInfo config.ChangeInfo) string {
-	lines := []string{"### dependabutler has created this PR to update .github/dependabot.yml"}
-	if len(changeInfo.NewRegistries) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, "#### 🏛 registries added")
-		lines = append(lines, "| type | name |")
-		lines = append(lines, "| - | - |")
-		for _, registry := range changeInfo.NewRegistries {
-			lines = append(lines, fmt.Sprintf("| %v | %v |", registry.Type, registry.Name))
+func getExistingPr(client *github.Client, org string, repo string) (*github.PullRequest, error) {
+	ctx := context.Background()
+	opts := github.IssueListByRepoOptions{
+		State:  "open",
+		Labels: []string{"dependabutler"},
+	}
+	issues, _, err := client.Issues.ListByRepo(ctx, org, repo, &opts)
+	if err != nil {
+		return nil, err
+	}
+	existingPrIssue := (*github.Issue)(nil)
+	for _, issue := range issues {
+		if issue.IsPullRequest() {
+			existingPrIssue = issue
+			break
 		}
 	}
-	if len(changeInfo.NewUpdates) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, "#### ♻ updates added")
-		lines = append(lines, "| type | directory | file |")
-		lines = append(lines, "| - | - | - |")
-		for _, update := range changeInfo.NewUpdates {
-			lines = append(lines, fmt.Sprintf("| %v | %v | %v |", update.Type, update.Directory, update.File))
+	if existingPrIssue != nil {
+		existingPr, _, err := client.PullRequests.Get(ctx, org, repo, *existingPrIssue.Number)
+		if err != nil {
+			return nil, err
 		}
+		return existingPr, nil
 	}
-	lines = append(lines, "")
-	lines = append(lines, "#### note")
-	lines = append(lines, "* Check the default settings applied (schedule, open-pull-requests-limit, etc.) and change if required.")
-	return strings.Join(lines, "\n")
+	return nil, nil
+}
+
+func getNewBranchName(prParams config.PullRequestParameters) (string, error) {
+	branchName := prParams.BranchName
+	if prParams.BranchNameRandomSuffix {
+		randToken, err := util.RandToken(16)
+		if err != nil {
+			return "", err
+		}
+		branchName = fmt.Sprintf("%v-%v", prParams.BranchName, randToken)
+	}
+	return branchName, nil
 }
