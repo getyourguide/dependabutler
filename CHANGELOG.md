@@ -25,3 +25,11 @@ Initial version.
 - Added config parameter for adding a random suffix to PR branch names (`branch-name-random-suffix`).
 - Added check to avoid `insecure-external-code-execution` being set on invalid manifest types.
 - Code cleanup.
+
+## v0.3.0
+
+- Added support for updates of existing PRs.
+
+- Added config parameter for adding a sleep time after PR creation/update (`sleep-after-pr-action`).
+
+- Fixes and code cleanup.
