@@ -57,9 +57,13 @@ func GetRepoFileList(client *github.Client, org string, repo string, defaultBran
 }
 
 // GetFileContent returns the content of a file
-func GetFileContent(client *github.Client, org string, repo string, path string) ([]byte, error) {
+func GetFileContent(client *github.Client, org string, repo string, path string, branchName string) ([]byte, error) {
 	ctx := context.Background()
-	content, _, _, err := client.Repositories.GetContents(ctx, org, repo, path, &github.RepositoryContentGetOptions{})
+	opts := &github.RepositoryContentGetOptions{}
+	if branchName != "" {
+		opts.Ref = branchName
+	}
+	content, _, _, err := client.Repositories.GetContents(ctx, org, repo, path, opts)
 	if err != nil && !strings.Contains(err.Error(), "404 Not Found") {
 		return nil, err
 	}
@@ -85,6 +89,15 @@ func CreatePullRequest(client *github.Client, org string, repo string, baseBranc
 	var branchName string
 	if existingPr != nil {
 		branchName = *existingPr.Head.Ref
+		// In case a PR exists, check if the file content has changed meanwhile.
+		prContent, err := GetFileContent(client, org, repo, ".github/dependabot.yml", branchName)
+		if err != nil {
+			return err
+		}
+		if string(prContent) == content {
+			log.Printf("INFO  Found open PR, no update required: %v", *existingPr.HTMLURL)
+			return nil
+		}
 	} else {
 		branchName, err = getNewBranchName(prParams)
 		if err != nil {
@@ -110,7 +123,9 @@ func CreatePullRequest(client *github.Client, org string, repo string, baseBranc
 		return err
 	}
 
-	if existingPr == nil {
+	if existingPr != nil {
+		log.Printf("INFO  PR successfully updated: %s\n", existingPr.GetHTMLURL())
+	} else {
 		// Create a new PR for the branch. In case of an existing PR, no further action is needed.
 		ctx := context.Background()
 		newPR := &github.NewPullRequest{}
@@ -128,6 +143,11 @@ func CreatePullRequest(client *github.Client, org string, repo string, baseBranc
 			return err
 		}
 		log.Printf("INFO  PR successfully created: %s\n", pr.GetHTMLURL())
+	}
+	sleepSeconds := toolConfig.PullRequestParameters.SleepAfterPRAction
+	if sleepSeconds > 0 {
+		// Sleep - can help to avoid issues with second rate limit.
+		time.Sleep(time.Duration(sleepSeconds) * time.Second)
 	}
 	return nil
 }
@@ -239,8 +259,6 @@ func getExistingPr(client *github.Client, org string, repo string) (*github.Pull
 		if err != nil {
 			return nil, err
 		}
-		prLink := *existingPrIssue.HTMLURL
-		log.Printf("INFO  Found open PR on repo %v: %v", repo, prLink)
 		return existingPr, nil
 	}
 	return nil, nil

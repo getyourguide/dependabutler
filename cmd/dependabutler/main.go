@@ -15,7 +15,7 @@ import (
 
 // LoadRemoteFileContent is the implementation of LoadFileContent, for remote files (GitHub).
 func LoadRemoteFileContent(file string, params config.LoadFileContentParameters) string {
-	content, err := githubapi.GetFileContent(params.GitHubClient, params.Org, params.Repo, file)
+	content, err := githubapi.GetFileContent(params.GitHubClient, params.Org, params.Repo, file, "")
 	if err != nil {
 		log.Printf("WARN  Could not content of file %v: %v", file, err)
 		return ""
@@ -86,7 +86,7 @@ func processRemoteRepo(toolConfig config.ToolConfig, execute bool, org string, r
 		log.Printf("INFO  Repository %v is archived. Nothing to do.", repo)
 		return
 	}
-	currentConfig, err := githubapi.GetFileContent(gitHubClient, org, repo, ".github/dependabot.yml")
+	currentConfig, err := githubapi.GetFileContent(gitHubClient, org, repo, ".github/dependabot.yml", "")
 	if err != nil {
 		if strings.Contains(err.Error(), "This repository is empty") {
 			log.Printf("INFO  Repository %v is empty. Nothing to do.", repo)
