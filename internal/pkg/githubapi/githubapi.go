@@ -73,43 +73,73 @@ func GetFileContent(client *github.Client, org string, repo string, path string)
 	return bytes.NewBufferString(fileContent).Bytes(), nil
 }
 
-// CreatePullRequest creates a PR for an update of dependabot.yml
-func CreatePullRequest(client *github.Client, org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
-	prParams := toolConfig.PullRequestParameters
+func GetExistingPr(client *github.Client, org string, repo string) (*github.PullRequest, error) {
 	ctx := context.Background()
-
-	// check if there already is a PR open, from dependabutler
 	opts := github.IssueListByRepoOptions{
 		State:  "open",
 		Labels: []string{"dependabutler"},
 	}
-	prFound, _, err := client.Issues.ListByRepo(ctx, org, repo, &opts)
+	issues, _, err := client.Issues.ListByRepo(ctx, org, repo, &opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if len(prFound) > 0 {
-		prLink := *(prFound[0].HTMLURL)
-		log.Printf("WARN  There's an open PR already on repo %v. Close or merge it first. %v", repo, prLink)
-		return nil
+	existingPrIssue := (*github.Issue)(nil)
+	for _, issue := range issues {
+		if issue.IsPullRequest() {
+			existingPrIssue = issue
+			break
+		}
 	}
+	if existingPrIssue != nil {
+		existingPr, _, err := client.PullRequests.Get(ctx, org, repo, *existingPrIssue.Number)
+		if err != nil {
+			return nil, err
+		}
+		prLink := *existingPrIssue.HTMLURL
+		log.Printf("INFO  Found open PR on repo %v: %v", repo, prLink)
+		return existingPr, nil
+	}
+	return nil, nil
+}
 
-	// get the branch name
+func GetNewBranchName(prParams config.PullRequestParameters) (string, error) {
 	branchName := prParams.BranchName
 	if prParams.BranchNameRandomSuffix {
 		randToken, err := util.RandToken(16)
 		if err != nil {
-			return err
+			return "", err
 		}
 		branchName = fmt.Sprintf("%v-%v", prParams.BranchName, randToken)
 	}
+	return branchName, nil
+}
 
-	// get the reference (existing or new)
+// CreatePullRequest creates a PR for an update of dependabot.yml
+func CreatePullRequest(client *github.Client, org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
+	prParams := toolConfig.PullRequestParameters
+
+	// Check if there already is a PR open, from dependabutler. If so, re-use its branch.
+	existingPr, err := GetExistingPr(client, org, repo)
+	if err != nil {
+		return err
+	}
+	var branchName string
+	if existingPr != nil {
+		branchName = *existingPr.Head.Ref
+	} else {
+		branchName, err = GetNewBranchName(prParams)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Get the reference (existing or new).
 	ref, err := getReference(client, org, repo, baseBranch, branchName)
 	if err != nil {
 		return err
 	}
 
-	// create a tree with one entry, for the commit
+	// Create a tree with one entry, for the commit.
 	tree, err := getTree(client, ref, org, repo, ".github/dependabot.yml", content)
 	if err != nil {
 		return err
@@ -121,22 +151,25 @@ func CreatePullRequest(client *github.Client, org string, repo string, baseBranc
 		return err
 	}
 
-	// Finally, create a PR.
-	newPR := &github.NewPullRequest{}
-	newPR.Title = &prParams.PRTitle
-	newPR.Body = &prDesc
-	newPR.Head = &branchName
-	newPR.Base = &baseBranch
-	pr, _, err := client.PullRequests.Create(ctx, org, repo, newPR)
-	if err != nil {
-		return err
+	if existingPr == nil {
+		// Create a new PR for the branch. In case of an existing PR, no further action is needed.
+		ctx := context.Background()
+		newPR := &github.NewPullRequest{}
+		newPR.Title = &prParams.PRTitle
+		newPR.Body = &prDesc
+		newPR.Head = &branchName
+		newPR.Base = &baseBranch
+		pr, _, err := client.PullRequests.Create(ctx, org, repo, newPR)
+		if err != nil {
+			return err
+		}
+		labels := []string{"dependabutler"}
+		_, _, err = client.Issues.AddLabelsToIssue(ctx, org, repo, *pr.Number, labels)
+		if err != nil {
+			return err
+		}
+		log.Printf("INFO  PR successfully created: %s\n", pr.GetHTMLURL())
 	}
-	labels := []string{"dependabutler"}
-	_, _, err = client.Issues.AddLabelsToIssue(ctx, org, repo, *pr.Number, labels)
-	if err != nil {
-		return err
-	}
-	log.Printf("INFO  PR successfully created: %s\n", pr.GetHTMLURL())
 	return nil
 }
 
