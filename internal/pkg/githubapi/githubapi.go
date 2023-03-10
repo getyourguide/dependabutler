@@ -77,8 +77,8 @@ func GetFileContent(client *github.Client, org string, repo string, path string,
 	return bytes.NewBufferString(fileContent).Bytes(), nil
 }
 
-// CreatePullRequest creates a PR for an update of dependabot.yml
-func CreatePullRequest(client *github.Client, org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
+// CreateOrUpdatePullRequest creates or updates a PR for changes in dependabot.yml
+func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
 	prParams := toolConfig.PullRequestParameters
 
 	// Check if there already is a PR open, from dependabutler. If so, re-use its branch.
