@@ -239,25 +239,6 @@ func IsRegistryUsed(manifestFile string, manifestPath string, defaultRegistry De
 	return false
 }
 
-// ApplyOverrides updates a config for an Update, using overriden values
-func ApplyOverrides(update *Update, overrides UpdateDefaults) {
-	if overrides.Schedule != (Schedule{}) {
-		update.Schedule = overrides.Schedule
-	}
-	if overrides.CommitMessage != (CommitMessage{}) {
-		update.CommitMessage = overrides.CommitMessage
-	}
-	if overrides.OpenPullRequestsLimit != 0 {
-		update.OpenPullRequestsLimit = overrides.OpenPullRequestsLimit
-	}
-	if overrides.RebaseStrategy != "" {
-		update.RebaseStrategy = overrides.RebaseStrategy
-	}
-	if overrides.InsecureExternalCodeExecution != "" {
-		update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
-	}
-}
-
 // AddManifest adds config for a new manifest file to dependabot.yml
 func (config *DependabotConfig) AddManifest(manifestFile string, manifestType string, toolConfig ToolConfig,
 	changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
@@ -316,12 +297,9 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	}
 	// apply override properties, if defined
 	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
-		ApplyOverrides(&update, overrides)
+		applyOverrides(&update, overrides)
 	}
-	// remove "insecure-external-code-execution" if it is not allowed
-	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
-		update.InsecureExternalCodeExecution = ""
-	}
+	fixUpdateConfig(&update, manifestType)
 
 	// add new registries if required
 	if len(updateRegistries) > 0 {
@@ -404,4 +382,31 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		}
 	}
 	return changeInfo
+}
+
+// applyOverrides updates a config for an Update, using overridden values
+func applyOverrides(update *Update, overrides UpdateDefaults) {
+	if overrides.Schedule != (Schedule{}) {
+		update.Schedule = overrides.Schedule
+	}
+	if overrides.CommitMessage != (CommitMessage{}) {
+		update.CommitMessage = overrides.CommitMessage
+	}
+	if overrides.OpenPullRequestsLimit != 0 {
+		update.OpenPullRequestsLimit = overrides.OpenPullRequestsLimit
+	}
+	if overrides.RebaseStrategy != "" {
+		update.RebaseStrategy = overrides.RebaseStrategy
+	}
+	if overrides.InsecureExternalCodeExecution != "" {
+		update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
+	}
+}
+
+// fixUpdateConfig fixes the config for an Update, if necessary
+func fixUpdateConfig(update *Update, manifestType string) {
+	// remove "insecure-external-code-execution" if it is not allowed
+	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
+		update.InsecureExternalCodeExecution = ""
+	}
 }
