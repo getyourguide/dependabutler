@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
@@ -353,6 +354,16 @@ func ScanLocalDirectory(baseDirectory string, directory string, manifests map[st
 
 // ToYaml returns a YAML representation of a dependabot config.
 func (config *DependabotConfig) ToYaml() []byte {
+	// sort entries in update list, to avoid commits due to changed order only
+	// nothing to be done for registries, as yamlv3 marshals maps sorted by key
+	if len(config.Updates) > 1 {
+		sort.Slice(config.Updates, func(i, j int) bool {
+			a := config.Updates[i]
+			b := config.Updates[j]
+			return (a.PackageEcosystem < b.PackageEcosystem) ||
+				(a.PackageEcosystem == b.PackageEcosystem && a.Directory < b.Directory)
+		})
+	}
 	buf := new(bytes.Buffer)
 	encoder := yaml.NewEncoder(buf)
 	encoder.SetIndent(2)
