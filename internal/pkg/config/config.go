@@ -210,7 +210,8 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 			log.Printf("WARN  Invalid dependabot config: %v", update)
 			return false
 		}
-		if ecosystem == manifestType && strings.HasPrefix("/"+manifestFile, directory) {
+		manifestPath := GetManifestPath(manifestFile, manifestType)
+		if ecosystem == manifestType && manifestPath == directory {
 			return true
 		}
 	}
@@ -241,6 +242,19 @@ func IsRegistryUsed(manifestFile string, manifestPath string, defaultRegistry De
 	return false
 }
 
+// GetManifestPath returns the path of the absolute path of a manifest file
+func GetManifestPath(manifestFile string, manifestType string) string {
+	if manifestType == "github-actions" {
+		// special case for GitHub Actions
+		return "/"
+	}
+	manifestPath, _ := filepath.Split("/" + manifestFile)
+	if manifestPath != "/" {
+		manifestPath = strings.TrimSuffix(manifestPath, "/")
+	}
+	return manifestPath
+}
+
 // AddManifest adds config for a new manifest file to dependabot.yml
 func (config *DependabotConfig) AddManifest(manifestFile string, manifestType string, toolConfig ToolConfig,
 	changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
@@ -254,14 +268,7 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	if config.Registries == nil {
 		config.Registries = map[string]Registry{}
 	}
-	manifestPath, _ := filepath.Split("/" + manifestFile)
-	if manifestPath != "/" {
-		manifestPath = strings.TrimSuffix(manifestPath, "/")
-	}
-	if manifestType == "github-actions" {
-		// special case for GitHub Actions
-		manifestPath = "/"
-	}
+	manifestPath := GetManifestPath(manifestFile, manifestType)
 	updateRegistries := make([]string, 0)
 
 	// check if one or more (default) registries are defined for this manifest type
