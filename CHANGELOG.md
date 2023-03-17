@@ -33,3 +33,7 @@ Initial version.
 - Added config parameter for adding a sleep time after PR creation/update (`sleep-after-pr-action`).
 
 - Fixes and code cleanup.
+
+## v0.3.1
+
+- Fixes.

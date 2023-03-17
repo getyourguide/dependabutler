@@ -17,7 +17,7 @@ import (
 func LoadRemoteFileContent(file string, params config.LoadFileContentParameters) string {
 	content, err := githubapi.GetFileContent(params.GitHubClient, params.Org, params.Repo, file, "")
 	if err != nil {
-		log.Printf("WARN  Could not content of file %v: %v", file, err)
+		log.Printf("WARN  Could not get content of file %v: %v", file, err)
 		return ""
 	}
 	return string(content)

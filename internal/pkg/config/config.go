@@ -114,10 +114,13 @@ type Update struct {
 
 // Registry holds the config items of a registry definition
 type Registry struct {
-	Type     string `yaml:"type"`
-	URL      string `yaml:"url"`
-	Username string `yaml:"username,omitempty"`
-	Password string `yaml:"password,omitempty"`
+	Type         string `yaml:"type"`
+	URL          string `yaml:"url"`
+	Username     string `yaml:"username,omitempty"`
+	Password     string `yaml:"password,omitempty"`
+	Key          string `yaml:"key,omitempty"`
+	Token        string `yaml:"token,omitempty"`
+	ReplacesBase string `yaml:"replaces-base,omitempty"`
 }
 
 // Schedule holds the config items of a schedule
