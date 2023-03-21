@@ -1,0 +1,27 @@
+#
+# minimal config file for dependabutler
+#   -> see dependabutler-sample.yml for details and explanations
+#
+update-defaults:
+  schedule:
+    interval: daily
+
+registries:
+
+pull-request-parameters:
+  author-name: dependabutler
+  author-email: dependabutler@example.com
+  commit-message: "update .github/dependabot.yml"
+  pr-title: "[dependabutler] update .github/dependabot.yml"
+  branch-name: "dependabutler-update"
+  branch-name-random-suffix: true
+
+manifest-patterns:
+  npm: "^(.*/)?package\\.json$"
+  maven: "^(.*/)?pom\\.xml$"
+  pip: "^(.*/)?requirements\\.txt$"
+  docker: "^(.*/)?([^/.]+\\.)?Dockerfile(\\.[^/.]+)?$"
+  gomod: "^(.*/)?go\\.mod$"
+  composer: "^(.*/)?composer\\.json$"
+  gradle: "^(.*/)?build\\.gradle(\\.kts)?$"
+  github-actions: "^\\.github/workflows/.*\\.yml$"
