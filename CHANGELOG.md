@@ -37,3 +37,8 @@ Initial version.
 ## v0.3.1
 
 - Fixes.
+
+## v0.3.2
+
+- Fix incorrect path comparison when checking if manifest is covered by existing config.
+- Process manifests sorted by path, to generate stable output.
