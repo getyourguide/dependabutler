@@ -356,7 +356,7 @@ func ScanLocalDirectory(baseDirectory string, directory string, manifests map[st
 		} else {
 			manifestType := GetManifestType(fullPath)
 			if manifestType != "" {
-				manifests[file.Name()] = manifestType
+				manifests[fullPath] = manifestType
 			}
 		}
 	}

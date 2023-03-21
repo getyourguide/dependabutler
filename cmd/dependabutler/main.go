@@ -17,7 +17,7 @@ import (
 func LoadRemoteFileContent(file string, params config.LoadFileContentParameters) string {
 	content, err := githubapi.GetFileContent(params.GitHubClient, params.Org, params.Repo, file, "")
 	if err != nil {
-		log.Printf("WARN  Could not get content of file %v: %v", file, err)
+		log.Printf("WARN  Could not get content of remote file %v: %v", file, err)
 		return ""
 	}
 	return string(content)
@@ -28,7 +28,7 @@ func LoadLocalFileContent(file string, params config.LoadFileContentParameters) 
 	fullPath := filepath.Join(params.Directory, file)
 	content, err := util.ReadFile(fullPath)
 	if err != nil {
-		log.Printf("WARN  Could not content of file %v: %v", fullPath, err)
+		log.Printf("WARN  Could not get content of local file %v: %v", fullPath, err)
 		return ""
 	}
 	return string(content)
