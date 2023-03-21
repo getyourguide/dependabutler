@@ -175,7 +175,15 @@ func (config *ToolConfig) Parse(data []byte) error {
 
 // Parse parses the dependabot.yml format
 func (config *DependabotConfig) Parse(data []byte) error {
-	return yaml.Unmarshal(data, config)
+	if err := yaml.Unmarshal(data, config); err != nil {
+		return err
+	}
+	for i, update := range config.Updates {
+		if update.Directory != "/" && strings.HasSuffix(update.Directory, "/") {
+			config.Updates[i].Directory = strings.TrimSuffix(update.Directory, "/")
+		}
+	}
+	return nil
 }
 
 // ParseToolConfig parses the config file
@@ -213,8 +221,9 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 			log.Printf("WARN  Invalid dependabot config: %v", update)
 			return false
 		}
-		manifestPath := GetManifestPath(manifestFile, manifestType)
-		if ecosystem == manifestType && manifestPath == directory {
+		directory = PathWithEndingSlash(directory)
+		manifestPath := PathWithEndingSlash(GetManifestPath(manifestFile, manifestType))
+		if ecosystem == manifestType && strings.HasPrefix(manifestPath, directory) {
 			return true
 		}
 	}
@@ -245,6 +254,17 @@ func IsRegistryUsed(manifestFile string, manifestPath string, defaultRegistry De
 	return false
 }
 
+// PathWithEndingSlash returns a path with an added slash, if needed
+func PathWithEndingSlash(path string) string {
+	if path == "/" || path == "" {
+		return "/"
+	}
+	if strings.HasSuffix(path, "/") {
+		return path
+	}
+	return path + "/"
+}
+
 // GetManifestPath returns the path of the absolute path of a manifest file
 func GetManifestPath(manifestFile string, manifestType string) string {
 	if manifestType == "github-actions" {
@@ -252,10 +272,10 @@ func GetManifestPath(manifestFile string, manifestType string) string {
 		return "/"
 	}
 	manifestPath, _ := filepath.Split("/" + manifestFile)
-	if manifestPath != "/" {
-		manifestPath = strings.TrimSuffix(manifestPath, "/")
+	if manifestPath == "/" {
+		return "/"
 	}
-	return manifestPath
+	return strings.TrimSuffix(manifestPath, "/")
 }
 
 // AddManifest adds config for a new manifest file to dependabot.yml
@@ -356,7 +376,7 @@ func ScanLocalDirectory(baseDirectory string, directory string, manifests map[st
 		} else {
 			manifestType := GetManifestType(fullPath)
 			if manifestType != "" {
-				manifests[file.Name()] = manifestType
+				manifests[fullPath] = manifestType
 			}
 		}
 	}
@@ -365,7 +385,7 @@ func ScanLocalDirectory(baseDirectory string, directory string, manifests map[st
 // ToYaml returns a YAML representation of a dependabot config.
 func (config *DependabotConfig) ToYaml() []byte {
 	// sort entries in update list, to avoid commits due to changed order only
-	// nothing to be done for registries, as yamlv3 marshals maps sorted by key
+	// nothing to be done for registries, as yaml v3 marshals maps sorted by key
 	if len(config.Updates) > 1 {
 		sort.Slice(config.Updates, func(i, j int) bool {
 			a := config.Updates[i]
