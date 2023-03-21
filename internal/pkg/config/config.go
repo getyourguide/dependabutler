@@ -165,6 +165,12 @@ type LoadFileContentParameters struct {
 	Directory    string
 }
 
+// KeyValue holds a key/value pair of strings. Used as a sortable key/value map.
+type KeyValue struct {
+	Key   string
+	Value string
+}
+
 // LoadFileContent is a function type for loading the content of a file.
 type LoadFileContent func(file string, params LoadFileContentParameters) string
 
@@ -417,10 +423,21 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		NewUpdates:    []UpdateInfo{},
 	}
 
+	// Base directories must be processed before subdirectories (/ before /app).
+	// Sort by length of path we must.
+	manifestsSorted := make([]KeyValue, 0, len(manifests))
+	for k, v := range manifests {
+		manifestsSorted = append(manifestsSorted, KeyValue{k, v})
+	}
+	sort.SliceStable(manifestsSorted, func(i, j int) bool {
+		path1, _ := filepath.Split("/" + manifestsSorted[i].Key)
+		path2, _ := filepath.Split("/" + manifestsSorted[j].Key)
+		return len(path1) < len(path2) || len(path1) == len(path2) && path1 < path2
+	})
 	// Iterate manifest files and check if they are covered by the current config file
-	for manifestFile, manifestType := range manifests {
-		if !config.IsManifestCovered(manifestFile, manifestType) {
-			config.AddManifest(manifestFile, manifestType, toolConfig, &changeInfo, loadFileFn, loadFileParams)
+	for _, manifest := range manifestsSorted {
+		if !config.IsManifestCovered(manifest.Key, manifest.Value) {
+			config.AddManifest(manifest.Key, manifest.Value, toolConfig, &changeInfo, loadFileFn, loadFileParams)
 		}
 	}
 	return changeInfo
