@@ -175,7 +175,7 @@ func TestIsManifestCovered(t *testing.T) {
 		{"npm", "npm/stuff/not_here/package.json", false},
 		{"github-actions", ".github/workflows/action.yml", true},
 	} {
-		got := config.IsManifestCovered(tt.manifestFile, tt.manifestType)
+		got := config.IsManifestCovered(tt.manifestFile, tt.manifestType, []string{})
 		if tt.expected != got {
 			t.Errorf("IsManifestCovered(%v, %v) failed; expected %t got %t", tt.manifestType, tt.manifestFile, tt.expected, got)
 		}
@@ -222,7 +222,7 @@ func TestAddManifest(t *testing.T) {
 		{"docker", "other_app/sub/folder/Dockerfile", 3, "/other_app/sub/folder", "weekly"},
 	} {
 		changeInfo := ChangeInfo{}
-		config.AddManifest(tt.manifestFile, tt.manifestType, toolConfig, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
+		config.ProcessManifest(tt.manifestFile, tt.manifestType, toolConfig, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
 		// check the number of expected elements
 		gotCount := len(config.Updates)
 		if gotCount != tt.expectedCount {

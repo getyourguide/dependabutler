@@ -20,6 +20,16 @@ func GetEnvParameter(name string, mandatory bool) string {
 	return value
 }
 
+// Contains checks if a slice contains a specific value
+func Contains[T comparable](s []T, e T) bool {
+	for i := range s {
+		if s[i] == e {
+			return true
+		}
+	}
+	return false
+}
+
 // CompileRePattern compiles a string containing a regular expression
 func CompileRePattern(pattern string) *regexp.Regexp {
 	if pattern == "" {
