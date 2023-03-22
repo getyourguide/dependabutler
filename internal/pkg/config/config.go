@@ -284,8 +284,8 @@ func GetManifestPath(manifestFile string, manifestType string) string {
 	return strings.TrimSuffix(manifestPath, "/")
 }
 
-// AddManifest adds config for a new manifest file to dependabot.yml
-func (config *DependabotConfig) AddManifest(manifestFile string, manifestType string, toolConfig ToolConfig,
+// ProcessManifest adds config for a new manifest file to dependabot.yml if necessary
+func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestType string, toolConfig ToolConfig,
 	changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
 ) {
 	if manifestFile == "" || manifestType == "" {
@@ -300,7 +300,7 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 	manifestPath := GetManifestPath(manifestFile, manifestType)
 	updateRegistries := make([]string, 0)
 
-	// check if one or more (default) registries are defined for this manifest type
+	// check if the default registries of the manifest's type are covered, and add them if necessary
 	if defaultRegistries, containsRegistry := toolConfig.Registries[manifestType]; containsRegistry {
 		for name, defaultRegistry := range defaultRegistries {
 			if defaultRegistry.URLMatchRequired {
@@ -323,7 +323,22 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 			}
 		}
 	}
-	// create the new update section using the default properties
+
+	// check if the manifest itself is covered, and add it if necessary
+	if !config.IsManifestCovered(manifestFile, manifestType) {
+		// create the new update section using the default properties
+		update := createUpdateEntry(manifestType, manifestPath, toolConfig)
+		// add new registries if required
+		if len(updateRegistries) > 0 {
+			update.Registries = updateRegistries
+		}
+		// add the update block, to the config
+		config.Updates = append(config.Updates, update)
+		changeInfo.NewUpdates = append(changeInfo.NewUpdates, UpdateInfo{Type: manifestType, Directory: manifestPath, File: manifestFile})
+	}
+}
+
+func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig) Update {
 	update := Update{
 		PackageEcosystem:              manifestType,
 		Directory:                     manifestPath,
@@ -338,14 +353,7 @@ func (config *DependabotConfig) AddManifest(manifestFile string, manifestType st
 		applyOverrides(&update, overrides)
 	}
 	fixUpdateConfig(&update, manifestType)
-
-	// add new registries if required
-	if len(updateRegistries) > 0 {
-		update.Registries = updateRegistries
-	}
-	// add the update block, to the config
-	config.Updates = append(config.Updates, update)
-	changeInfo.NewUpdates = append(changeInfo.NewUpdates, UpdateInfo{Type: manifestType, Directory: manifestPath, File: manifestFile})
+	return update
 }
 
 // GetManifestType returns the type of manifest file, if any.
@@ -436,9 +444,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	})
 	// Iterate manifest files and check if they are covered by the current config file
 	for _, manifest := range manifestsSorted {
-		if !config.IsManifestCovered(manifest.Key, manifest.Value) {
-			config.AddManifest(manifest.Key, manifest.Value, toolConfig, &changeInfo, loadFileFn, loadFileParams)
-		}
+		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, &changeInfo, loadFileFn, loadFileParams)
 	}
 	return changeInfo
 }

@@ -42,3 +42,7 @@ Initial version.
 
 - Fix incorrect path comparison when checking if manifest is covered by existing config.
 - Process manifests sorted by path, to generate stable output.
+
+## v0.3.3
+
+- Fix addition of default registries.
