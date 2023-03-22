@@ -216,11 +216,11 @@ func ParseDependabotConfig(fileContent []byte) (*DependabotConfig, error) {
 }
 
 // IsManifestCovered returns if a manifest file is covered within a dependabot.yml config
-func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestType string) bool {
+func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestType string, updateRegistries []string) bool {
 	if config.Updates == nil || len(config.Updates) == 0 {
 		return false
 	}
-	for _, update := range config.Updates {
+	for i, update := range config.Updates {
 		ecosystem := update.PackageEcosystem
 		directory := update.Directory
 		if ecosystem == "" || directory == "" {
@@ -230,6 +230,14 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 		directory = PathWithEndingSlash(directory)
 		manifestPath := PathWithEndingSlash(GetManifestPath(manifestFile, manifestType))
 		if ecosystem == manifestType && strings.HasPrefix(manifestPath, directory) {
+			// update entry is covering the one being checked
+			// in case the latter is using registries, these must be referenced by this entry
+			for _, name := range updateRegistries {
+				// check if name in update -> []registries
+				if !util.Contains(update.Registries, name) {
+					config.Updates[i].Registries = append(config.Updates[i].Registries, name)
+				}
+			}
 			return true
 		}
 	}
@@ -325,7 +333,7 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 	}
 
 	// check if the manifest itself is covered, and add it if necessary
-	if !config.IsManifestCovered(manifestFile, manifestType) {
+	if !config.IsManifestCovered(manifestFile, manifestType, updateRegistries) {
 		// create the new update section using the default properties
 		update := createUpdateEntry(manifestType, manifestPath, toolConfig)
 		// add new registries if required
