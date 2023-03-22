@@ -175,7 +175,7 @@ func TestIsManifestCovered(t *testing.T) {
 		{"npm", "npm/stuff/not_here/package.json", false},
 		{"github-actions", ".github/workflows/action.yml", true},
 	} {
-		got := config.IsManifestCovered(tt.manifestFile, tt.manifestType)
+		got := config.IsManifestCovered(tt.manifestFile, tt.manifestType, []string{})
 		if tt.expected != got {
 			t.Errorf("IsManifestCovered(%v, %v) failed; expected %t got %t", tt.manifestType, tt.manifestFile, tt.expected, got)
 		}
