@@ -98,3 +98,4 @@ manifest-patterns:
   composer: "^(.*/)?composer\\.json$"
   gradle: "^(.*/)?build\\.gradle(\\.kts)?$"
   github-actions: "^\\.github/workflows/.*\\.yml$"
+  bundler: "^(.*/)?Gemfile(\\.lock)?$"
