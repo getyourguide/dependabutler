@@ -99,3 +99,4 @@ manifest-patterns:
   gradle: "^(.*/)?build\\.gradle(\\.kts)?$"
   github-actions: "^\\.github/workflows/.*\\.yml$"
   bundler: "^(.*/)?Gemfile(\\.lock)?$"
+  cargo: "^(.*/)?Cargo\\.toml$"
