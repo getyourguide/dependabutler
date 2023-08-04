@@ -58,6 +58,7 @@ registries:
       url-match-required: true
       url-match-additional-files:
         - package-lock.json
+        - .npmrc
   docker:
     my-docker-registry:
       type: docker-registry
