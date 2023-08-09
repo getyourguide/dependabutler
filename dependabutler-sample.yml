@@ -59,6 +59,7 @@ registries:
       url-match-additional-files:
         - package-lock.json
         - .npmrc
+        - pnpm-lock.yaml
   docker:
     my-docker-registry:
       type: docker-registry
@@ -91,7 +92,7 @@ pull-request-parameters:
 #   - can be extended in case you are using custom file names by convention
 #
 manifest-patterns:
-  npm: "^(.*/)?package\\.json$"
+  npm: "^(.*/)?(package\\.json|pnpm-lock\\.ya?ml)$"
   maven: "^(.*/)?pom\\.xml$"
   pip: "^(.*/)?requirements\\.txt$"
   docker: "^(.*/)?([^/.]+\\.)?Dockerfile(\\.[^/.]+)?$"
