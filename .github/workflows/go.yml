@@ -42,13 +42,11 @@ jobs:
         go install mvdan.cc/gofumpt@latest
         gofumpt -d .
         [ -z "$(gofumpt -l .)" ]
-    - name: Test
-      run: go test -count=1 ./...
     - name: Test with -race
-      run: go test -race -count=1 ./...
-    - name: Generate coverage report
+      run: go test -vet=off -race -count=1 ./...
+    - name: Test with coverage report
       run: |
-        go test -count=1 ./... -coverprofile cover.out
+        go test -vet=off -count=1 ./... -coverprofile cover.out
         go tool cover -html cover.out -o cover.html
     - name: Archive code coverage report
       uses: actions/upload-artifact@v3
