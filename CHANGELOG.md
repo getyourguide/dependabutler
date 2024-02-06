@@ -46,3 +46,8 @@ Initial version.
 ## v0.3.3
 
 - Fix addition of default registries.
+
+## v0.4.0
+
+- Update to Go 1.21.
+- Added parsing of `enable-beta-ecosystems` and `groups` config properties.
