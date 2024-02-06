@@ -70,9 +70,10 @@ type UpdateDefaults struct {
 
 // DependabotConfig holds the configuration defined in dependabot.yml
 type DependabotConfig struct {
-	Version    int                 `yaml:"version"`
-	Registries map[string]Registry `yaml:"registries,omitempty"`
-	Updates    []Update            `yaml:"updates"`
+	Version              int                 `yaml:"version"`
+	Registries           map[string]Registry `yaml:"registries,omitempty"`
+	Updates              []Update            `yaml:"updates"`
+	EnableBetaEcoSystems bool                `yaml:"enable-beta-ecosystems,omitempty"`
 }
 
 // Allow holds the config items of an allow definition
@@ -90,18 +91,19 @@ type Ignore struct {
 
 // Update holds the config items of an update definition
 type Update struct {
-	PackageEcosystem              string        `yaml:"package-ecosystem"`
-	Directory                     string        `yaml:"directory"`
-	Schedule                      Schedule      `yaml:"schedule,omitempty"`
-	Registries                    []string      `yaml:"registries,omitempty"`
-	CommitMessage                 CommitMessage `yaml:"commit-message,omitempty"`
-	OpenPullRequestsLimit         int           `yaml:"open-pull-requests-limit,omitempty"`
-	Assignees                     []string      `yaml:"assignees,omitempty"`
-	Allow                         []Allow       `yaml:"allow,omitempty"`
-	Ignore                        []Ignore      `yaml:"ignore,omitempty"`
-	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution,omitempty"`
-	Labels                        []string      `yaml:"labels,omitempty"`
-	Milestone                     int           `yaml:"milestone,omitempty"`
+	PackageEcosystem              string           `yaml:"package-ecosystem"`
+	Directory                     string           `yaml:"directory"`
+	Schedule                      Schedule         `yaml:"schedule,omitempty"`
+	Registries                    []string         `yaml:"registries,omitempty"`
+	CommitMessage                 CommitMessage    `yaml:"commit-message,omitempty"`
+	OpenPullRequestsLimit         int              `yaml:"open-pull-requests-limit,omitempty"`
+	Assignees                     []string         `yaml:"assignees,omitempty"`
+	Allow                         []Allow          `yaml:"allow,omitempty"`
+	Ignore                        []Ignore         `yaml:"ignore,omitempty"`
+	Groups                        map[string]Group `yaml:"groups,omitempty"`
+	InsecureExternalCodeExecution string           `yaml:"insecure-external-code-execution,omitempty"`
+	Labels                        []string         `yaml:"labels,omitempty"`
+	Milestone                     int              `yaml:"milestone,omitempty"`
 	PullRequestBranchName         struct {
 		Separator string `yaml:"separator"`
 	} `yaml:"pull-request-branch-name,omitempty"`
@@ -110,6 +112,14 @@ type Update struct {
 	TargetBranch       string   `yaml:"target-branch,omitempty"`
 	Vendor             bool     `yaml:"vendor,omitempty"`
 	VersioningStrategy string   `yaml:"versioning-strategy,omitempty"`
+}
+
+// Group holds the config items of a group definition
+type Group struct {
+	Separator       string   `yaml:"dependency-type,omitempty"`
+	Patterns        []string `yaml:"patterns,omitempty"`
+	ExcludePatterns []string `yaml:"exclude-patterns,omitempty"`
+	UpdateTypes     []string `yaml:"update-types,omitempty"`
 }
 
 // Registry holds the config items of a registry definition
