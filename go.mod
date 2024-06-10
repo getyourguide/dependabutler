@@ -1,6 +1,6 @@
 module github.com/getyourguide/dependabutler
 
-go 1.21
+go 1.22
 
 require (
 	github.com/google/go-github/v50 v50.2.0
