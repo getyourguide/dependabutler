@@ -265,7 +265,11 @@ func TestGetManifestType(t *testing.T) {
 		"gradle":         "(.*/)?build\\.gradle(\\.kts)?",
 		"github-actions": "\\.github/workflows/.*\\.yml",
 	}
-	InitializePatterns(manifestFilePatterns)
+
+	config := ToolConfig{
+		ManifestPatterns: manifestFilePatterns,
+	}
+	config.InitializePatterns()
 
 	for _, tt := range []struct {
 		fullPath string

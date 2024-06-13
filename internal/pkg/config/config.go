@@ -16,8 +16,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var manifestFilePatterns map[string]*regexp.Regexp
-var manifestIgnoreFilePattern *regexp.Regexp
+var (
+	manifestFilePatterns      map[string]*regexp.Regexp
+	manifestIgnoreFilePattern *regexp.Regexp
+)
 
 // InitializePatterns pre-compiles manifest file name patterns
 func (config *ToolConfig) InitializePatterns() {
