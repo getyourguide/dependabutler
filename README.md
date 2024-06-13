@@ -82,6 +82,6 @@ For sensitive security matters please contact [security@getyourguide.com](mailto
 
 ## Legal
 
-Copyright 2023 GetYourGuide GmbH.
+Copyright 2024 GetYourGuide GmbH.
 
 dependabutler is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full text.

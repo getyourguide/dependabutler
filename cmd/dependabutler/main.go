@@ -172,7 +172,7 @@ func main() {
 	}
 
 	// initialize / precompile the patterns
-	config.InitializePatterns(toolConfig.ManifestPatterns)
+	toolConfig.InitializePatterns()
 
 	// process
 	if mode == "local" {

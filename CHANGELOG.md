@@ -9,8 +9,8 @@ Initial version.
 - Improved parser of existing config files.
 
 - Added new configuration options
-  - Switch to make dependabutler verify that a registry is really used, before adding it to the config.
-  - List of files to search for the above, in addition to the manifest file itself.
+    - Switch to make dependabutler verify that a registry is really used, before adding it to the config.
+    - List of files to search for the above, in addition to the manifest file itself.
 
 - Ignoring archived and empty repositories.
 
@@ -51,3 +51,8 @@ Initial version.
 
 - Update to Go 1.21.
 - Added parsing of `enable-beta-ecosystems` and `groups` config properties.
+
+## v0.5.0
+
+- Update to Go 1.22.
+- Added config property `manifest-ignore-pattern` to exclude directories from the manifest file search.
