@@ -17,12 +17,17 @@ import (
 )
 
 var manifestFilePatterns map[string]*regexp.Regexp
+var manifestIgnoreFilePattern *regexp.Regexp
 
 // InitializePatterns pre-compiles manifest file name patterns
-func InitializePatterns(patterns map[string]string) {
+func (config *ToolConfig) InitializePatterns() {
 	manifestFilePatterns = map[string]*regexp.Regexp{}
-	for key, pattern := range patterns {
+	for key, pattern := range config.ManifestPatterns {
 		manifestFilePatterns[key] = util.CompileRePattern(pattern)
+	}
+	manifestIgnoreFilePattern = nil
+	if config.ManifestIgnorePattern != "" {
+		manifestIgnoreFilePattern = util.CompileRePattern(config.ManifestIgnorePattern)
 	}
 }
 
@@ -32,6 +37,7 @@ type ToolConfig struct {
 	UpdateOverrides       map[string]UpdateDefaults    `yaml:"update-overrides"`
 	Registries            map[string]DefaultRegistries `yaml:"registries"`
 	ManifestPatterns      map[string]string            `yaml:"manifest-patterns"`
+	ManifestIgnorePattern string                       `yaml:"manifest-ignore-pattern"`
 	PullRequestParameters PullRequestParameters        `yaml:"pull-request-parameters"`
 }
 
@@ -376,6 +382,9 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 
 // GetManifestType returns the type of manifest file, if any.
 func GetManifestType(fullPath string) string {
+	if manifestIgnoreFilePattern != nil && manifestIgnoreFilePattern.MatchString(fullPath) {
+		return ""
+	}
 	for manifestType, re := range manifestFilePatterns {
 		if re.MatchString(fullPath) {
 			return manifestType

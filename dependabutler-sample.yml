@@ -102,3 +102,8 @@ manifest-patterns:
   github-actions: "^\\.github/workflows/.*\\.yml$"
   bundler: "^(.*/)?Gemfile(\\.lock)?$"
   cargo: "^(.*/)?Cargo\\.toml$"
+
+#
+# patterns for manifest paths to be ignored
+#
+manifest-ignore-pattern: "^.*[$][{].*$"
