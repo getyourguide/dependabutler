@@ -235,7 +235,7 @@ func ParseDependabotConfig(fileContent []byte) (*DependabotConfig, error) {
 
 // IsManifestCovered returns if a manifest file is covered within a dependabot.yml config
 func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestType string, updateRegistries []string) bool {
-	if config.Updates == nil || len(config.Updates) == 0 {
+	if len(config.Updates) == 0 {
 		return false
 	}
 	for i, update := range config.Updates {
