@@ -107,9 +107,11 @@ func processRemoteRepo(toolConfig config.ToolConfig, execute bool, org string, r
 			if err := githubapi.CreateOrUpdatePullRequest(gitHubClient, org, repo, baseBranch, prDesc, string(yamlContent), toolConfig); err != nil {
 				if strings.Contains(err.Error(), "pull request already exists") {
 					log.Printf("WARN  There's an open pull request already on repo %v. Close or merge it first.", repo)
+				} else if strings.Contains(err.Error(), "Resource not accessible") {
+					// Fail with error.
+					log.Fatalf("ERROR Could not create PR for repo %v, permission problem. Stopping. %v", repo, err)
 				} else {
-					// fail with error.
-					log.Fatalf("ERROR Could not create PR, stopping: %v", err)
+					log.Printf("ERROR Could not create PR for repo %v: %v", repo, err)
 				}
 			}
 		} else {
