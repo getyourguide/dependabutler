@@ -56,3 +56,8 @@ Initial version.
 
 - Update to Go 1.22.
 - Added config property `manifest-ignore-pattern` to exclude directories from the manifest file search.
+
+## v0.6.0
+
+- Update to Go 1.24.
+- Fail and stop in case a PR cannot be created.
