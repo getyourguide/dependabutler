@@ -17,7 +17,6 @@ import (
 func LoadRemoteFileContent(file string, params config.LoadFileContentParameters) string {
 	content, err := githubapi.GetFileContent(params.GitHubClient, params.Org, params.Repo, file, "")
 	if err != nil {
-		log.Printf("WARN  Could not get content of remote file %v: %v", file, err)
 		return ""
 	}
 	return string(content)
@@ -28,7 +27,6 @@ func LoadLocalFileContent(file string, params config.LoadFileContentParameters) 
 	fullPath := filepath.Join(params.Directory, file)
 	content, err := util.ReadFile(fullPath)
 	if err != nil {
-		log.Printf("WARN  Could not get content of local file %v: %v", fullPath, err)
 		return ""
 	}
 	return string(content)
@@ -201,7 +199,7 @@ func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, too
 		return nil, config.ChangeInfo{}
 	}
 	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, loadFileFn, loadFileParams)
-	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 {
+	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 || len(changeInfo.FixedUpdates) > 0 {
 		// at least one item in the update block is needed
 		return dependabotConfig.ToYaml(), changeInfo
 	}

@@ -177,6 +177,15 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 			lines = append(lines, fmt.Sprintf("| %v | %v | %v |", update.Type, update.Directory, update.File))
 		}
 	}
+	if len(changeInfo.FixedUpdates) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "#### 🔨 updates fixed")
+		lines = append(lines, "| type | directory | ")
+		lines = append(lines, "| - | - |")
+		for _, update := range changeInfo.FixedUpdates {
+			lines = append(lines, fmt.Sprintf("| %v | %v |", update.Type, update.Directory))
+		}
+	}
 	lines = append(lines, "")
 	lines = append(lines, "#### note")
 	lines = append(lines, "* Check the default settings applied (schedule, open-pull-requests-limit, etc.) and change if required.")
