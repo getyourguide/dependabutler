@@ -160,6 +160,7 @@ type CommitMessage struct {
 type ChangeInfo struct {
 	NewRegistries []RegistryInfo
 	NewUpdates    []UpdateInfo
+	FixedUpdates  []UpdateInfo
 }
 
 // RegistryInfo holds the properties of a registry, for the change message.
@@ -243,7 +244,7 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 		directory := update.Directory
 		if ecosystem == "" || directory == "" {
 			log.Printf("WARN  Invalid dependabot config: %v", update)
-			return false
+			continue
 		}
 		directory = PathWithEndingSlash(directory)
 		manifestPath := PathWithEndingSlash(GetManifestPath(manifestFile, manifestType))
@@ -378,7 +379,7 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
 		applyOverrides(&update, overrides)
 	}
-	fixUpdateConfig(&update, manifestType)
+	fixNewUpdateConfig(&update, manifestType)
 	return update
 }
 
@@ -458,6 +459,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	changeInfo := ChangeInfo{
 		NewRegistries: []RegistryInfo{},
 		NewUpdates:    []UpdateInfo{},
+		FixedUpdates:  []UpdateInfo{},
 	}
 
 	// Base directories must be processed before subdirectories (/ before /app).
@@ -471,6 +473,13 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		path2, _ := filepath.Split("/" + manifestsSorted[j].Key)
 		return len(path1) < len(path2) || len(path1) == len(path2) && path1 < path2
 	})
+	// fix existing updates, if necessary
+	for i := range config.Updates {
+		update := &config.Updates[i]
+		if fixExistingUpdateConfig(update) {
+			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
+		}
+	}
 	// Iterate manifest files and check if they are covered by the current config file
 	for _, manifest := range manifestsSorted {
 		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, &changeInfo, loadFileFn, loadFileParams)
@@ -497,10 +506,21 @@ func applyOverrides(update *Update, overrides UpdateDefaults) {
 	}
 }
 
-// fixUpdateConfig fixes the config for an Update, if necessary
-func fixUpdateConfig(update *Update, manifestType string) {
+// fixNewUpdateConfig fixes the config for a newly created Update, if necessary
+func fixNewUpdateConfig(update *Update, manifestType string) {
 	// remove "insecure-external-code-execution" if it is not allowed
 	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
 		update.InsecureExternalCodeExecution = ""
 	}
+}
+
+// fixNewUpdateConfig fixes the config for an existing Update, if necessary
+func fixExistingUpdateConfig(update *Update) bool {
+	// change path "" to "/"
+	if update.Directory == "" {
+		log.Printf("INFO  fixed empty directory in config for %v", update.PackageEcosystem)
+		update.Directory = "/"
+		return true
+	}
+	return false
 }
