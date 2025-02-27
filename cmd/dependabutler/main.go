@@ -165,12 +165,12 @@ func main() {
 	// read and parse config file, and initialize the patterns
 	fileContent, err := util.ReadFile(configFile)
 	if err != nil {
-		log.Printf("ERROR Could not read tool config file %v.", configFile)
+		log.Printf("ERROR Could not read tool config file for repo %s: %v.", repo, configFile)
 		return
 	}
 	toolConfig, err := config.ParseToolConfig(fileContent)
 	if err != nil {
-		log.Printf("ERROR Could not parse tool config: %v", err)
+		log.Printf("ERROR Could not parse tool config for repo %s: %v", repo, err)
 		return
 	}
 
@@ -205,6 +205,6 @@ func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, too
 		// at least one item in the update block is needed
 		return dependabotConfig.ToYaml(), changeInfo
 	}
-	log.Printf("INFO  No update needed.")
+	log.Printf("INFO  No update needed for repo %s.", repo)
 	return nil, config.ChangeInfo{}
 }
