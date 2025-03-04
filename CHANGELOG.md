@@ -61,3 +61,8 @@ Initial version.
 
 - Update to Go 1.24.
 - Fail and stop in case a PR cannot be created.
+
+## v0.6.2
+
+- Added fixing existing updates.
+- Fix an empty Directory values, setting them to /
