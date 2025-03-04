@@ -203,6 +203,15 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 			lines = append(lines, fmt.Sprintf("| %v | %v |", update.Type, update.Directory))
 		}
 	}
+	if len(changeInfo.RemovedUpdates) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "#### 🧹 unused updates removed")
+		lines = append(lines, "| type | directory | ")
+		lines = append(lines, "| - | - |")
+		for _, update := range changeInfo.RemovedUpdates {
+			lines = append(lines, fmt.Sprintf("| %v | %v |", update.Type, update.Directory))
+		}
+	}
 	lines = append(lines, "")
 	lines = append(lines, "#### note")
 	lines = append(lines, "* Check the default settings applied (schedule, open-pull-requests-limit, etc.) and change if required.")
