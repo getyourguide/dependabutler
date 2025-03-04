@@ -158,9 +158,10 @@ type CommitMessage struct {
 
 // ChangeInfo holds the changes applied to a config.
 type ChangeInfo struct {
-	NewRegistries []RegistryInfo
-	NewUpdates    []UpdateInfo
-	FixedUpdates  []UpdateInfo
+	NewRegistries  []RegistryInfo
+	NewUpdates     []UpdateInfo
+	FixedUpdates   []UpdateInfo
+	RemovedUpdates []UpdateInfo
 }
 
 // RegistryInfo holds the properties of a registry, for the change message.
@@ -184,6 +185,14 @@ type LoadFileContentParameters struct {
 	Directory    string
 }
 
+// CheckDirectoryExistsParameters holds all parameters needed for the CheckDirectoryExists function implementations.
+type CheckDirectoryExistsParameters struct {
+	GitHubClient *github.Client
+	Org          string
+	Repo         string
+	Directory    string
+}
+
 // KeyValue holds a key/value pair of strings. Used as a sortable key/value map.
 type KeyValue struct {
 	Key   string
@@ -192,6 +201,9 @@ type KeyValue struct {
 
 // LoadFileContent is a function type for loading the content of a file.
 type LoadFileContent func(file string, params LoadFileContentParameters) string
+
+// CheckDirectoryExists is a function type for checking if a folder exists.
+type CheckDirectoryExists func(directory string, params CheckDirectoryExistsParameters) bool
 
 // Parse parses the config.yml format
 func (config *ToolConfig) Parse(data []byte) error {
@@ -454,7 +466,8 @@ func (config *DependabotConfig) ToYaml() []byte {
 
 // UpdateConfig updates a dependabot config with a list of manifests found and the tool's config.
 func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig,
-	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
+	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters, checkDirectoryExists CheckDirectoryExists,
+	checkDirectoryExistsParams CheckDirectoryExistsParameters,
 ) ChangeInfo {
 	changeInfo := ChangeInfo{
 		NewRegistries: []RegistryInfo{},
@@ -473,13 +486,26 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		path2, _ := filepath.Split("/" + manifestsSorted[j].Key)
 		return len(path1) < len(path2) || len(path1) == len(path2) && path1 < path2
 	})
-	// fix existing updates, if necessary
+
+	// Remove updates with non-existing directories
+	existingUpdates := []Update{}
+	for _, update := range config.Updates {
+		if checkDirectoryExists(update.Directory, checkDirectoryExistsParams) {
+			existingUpdates = append(existingUpdates, update)
+		} else {
+			changeInfo.RemovedUpdates = append(changeInfo.RemovedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
+		}
+	}
+	config.Updates = existingUpdates
+
+	// Fix existing updates, if necessary
 	for i := range config.Updates {
 		update := &config.Updates[i]
 		if fixExistingUpdateConfig(update) {
 			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
 		}
 	}
+
 	// Iterate manifest files and check if they are covered by the current config file
 	for _, manifest := range manifestsSorted {
 		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, &changeInfo, loadFileFn, loadFileParams)
