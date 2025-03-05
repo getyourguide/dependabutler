@@ -292,3 +292,32 @@ func TestGetManifestType(t *testing.T) {
 		}
 	}
 }
+
+func TestHasDirectorySet(t *testing.T) {
+	for _, tt := range []struct {
+		update   Update
+		expected bool
+	}{
+		{Update{Directory: ""}, false},
+		{Update{Directory: "/"}, true},
+		{Update{Directory: "/etc"}, true},
+		{Update{Directory: "/etc/shadow"}, true},
+		{Update{Directories: []string{"", ""}}, false},
+		{Update{Directories: []string{"", "/", ""}}, true},
+		{Update{Directories: []string{"/"}}, true},
+		{Update{Directories: []string{"/var/lib/kubelet"}}, true},
+		{Update{Directories: []string{"/etc/kubernetes/manifests", "/opt"}}, true},
+		{Update{Directory: "", Directories: []string{""}}, false},
+		{Update{Directory: "", Directories: []string{"/"}}, true},
+		{Update{Directory: "", Directories: []string{"/applicationsupport/internetexplorer"}}, true},
+		{Update{Directory: "/", Directories: []string{""}}, true},
+		{Update{Directory: "/home/joe", Directories: []string{""}}, true},
+		{Update{Directory: "/", Directories: []string{"/"}}, true},
+		{Update{Directory: "/", Directories: []string{"/home/joe"}}, true},
+	} {
+		got := hasDirectorySet(&tt.update)
+		if tt.expected != got {
+			t.Errorf("hasDirectorySet(%v) failed; expected %t got %t", tt.update, tt.expected, got)
+		}
+	}
+}

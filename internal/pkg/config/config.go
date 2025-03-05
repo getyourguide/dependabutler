@@ -101,6 +101,7 @@ type Ignore struct {
 type Update struct {
 	PackageEcosystem              string           `yaml:"package-ecosystem"`
 	Directory                     string           `yaml:"directory"`
+	Directories                   []string         `yaml:"directories"`
 	Schedule                      Schedule         `yaml:"schedule,omitempty"`
 	Registries                    []string         `yaml:"registries,omitempty"`
 	CommitMessage                 CommitMessage    `yaml:"commit-message,omitempty"`
@@ -206,6 +207,13 @@ func (config *DependabotConfig) Parse(data []byte) error {
 	for i, update := range config.Updates {
 		if update.Directory != "/" && strings.HasSuffix(update.Directory, "/") {
 			config.Updates[i].Directory = strings.TrimSuffix(update.Directory, "/")
+		}
+		if update.Directories != nil {
+			for j, directory := range update.Directories {
+				if directory != "/" && strings.HasSuffix(directory, "/") {
+					config.Updates[i].Directories[j] = strings.TrimSuffix(directory, "/")
+				}
+			}
 		}
 	}
 	return nil
@@ -514,12 +522,27 @@ func fixNewUpdateConfig(update *Update, manifestType string) {
 	}
 }
 
+func hasDirectorySet(update *Update) bool {
+	if update.Directory != "" {
+		return true
+	}
+	if len(update.Directories) > 0 {
+		for _, directory := range update.Directories {
+			if directory != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // fixNewUpdateConfig fixes the config for an existing Update, if necessary
 func fixExistingUpdateConfig(update *Update) bool {
 	// change path "" to "/"
-	if update.Directory == "" {
+	if !hasDirectorySet(update) {
 		log.Printf("INFO  fixed empty directory in config for %v", update.PackageEcosystem)
 		update.Directory = "/"
+		update.Directories = nil
 		return true
 	}
 	return false
