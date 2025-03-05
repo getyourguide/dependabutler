@@ -66,3 +66,8 @@ Initial version.
 
 - Added fixing existing updates.
 - Fix an empty Directory values, setting them to /
+
+## v0.7.0
+
+- Added removing unused updates.
+- Added support for the `directories` property.
