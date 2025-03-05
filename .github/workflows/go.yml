@@ -2,6 +2,10 @@ name: Go
 
 on: [push]
 
+concurrency:
+  group: ${{ github.workflow }}${{ github.ref_name != github.event.repository.default_branch && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}
+
 jobs:
   test:
     strategy:
@@ -10,46 +14,46 @@ jobs:
         platform: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Install Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ matrix.go-version }}
-    - name: Environment information
-      run: |
-        uname -a
-        go version
-        go env
-    - name: Vet
-      if: matrix.platform == 'ubuntu-latest'
-      run: go vet -v ./...
-    - name: Lint
-      if: matrix.platform == 'ubuntu-latest'
-      run: |
-        export PATH=$PATH:$(go env GOPATH)/bin
-        go install golang.org/x/lint/golint@latest
-        golint -set_exit_status ./...
-    - name: staticcheck.io
-      if: matrix.platform == 'ubuntu-latest'
-      uses: dominikh/staticcheck-action@v1.3.1
-      with:
-        install-go: false
-    - name: gofumpt formatting
-      if: matrix.platform == 'ubuntu-latest'
-      run: |
-        export PATH=$PATH:$(go env GOPATH)/bin
-        go install mvdan.cc/gofumpt@latest
-        gofumpt -d .
-        [ -z "$(gofumpt -l .)" ]
-    - name: Test with -race
-      run: go test -vet=off -race -count=1 ./...
-    - name: Test with coverage report
-      run: |
-        go test -vet=off -count=1 ./... -coverprofile cover.out
-        go tool cover -html cover.out -o cover.html
-    - name: Archive code coverage report
-      uses: actions/upload-artifact@v4
-      with:
-        name: code-coverage-report
-        path: coverage-${{ matrix.platform }}.html
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Environment information
+        run: |
+          uname -a
+          go version
+          go env
+      - name: Vet
+        if: matrix.platform == 'ubuntu-latest'
+        run: go vet -v ./...
+      - name: Lint
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          go install golang.org/x/lint/golint@latest
+          golint -set_exit_status ./...
+      - name: staticcheck.io
+        if: matrix.platform == 'ubuntu-latest'
+        uses: dominikh/staticcheck-action@v1.3.1
+        with:
+          install-go: false
+      - name: gofumpt formatting
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          go install mvdan.cc/gofumpt@latest
+          gofumpt -d .
+          [ -z "$(gofumpt -l .)" ]
+      - name: Test with -race
+        run: go test -vet=off -race -count=1 ./...
+      - name: Test with coverage report
+        run: |
+          go test -vet=off -count=1 ./... -coverprofile cover.out
+          go tool cover -html cover.out -o cover.html
+      - name: Archive code coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage-report
+          path: coverage-${{ matrix.platform }}.html
