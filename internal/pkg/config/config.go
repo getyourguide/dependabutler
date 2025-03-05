@@ -555,7 +555,7 @@ func isPathCovered(manifestPath string, directory string, directories []string) 
 	if directory != "" {
 		return strings.HasPrefix(manifestPath, PathWithEndingSlash(directory))
 	}
-	if directories != nil && len(directories) > 0 {
+	if len(directories) > 0 {
 		for _, directory := range directories {
 			if strings.HasPrefix(manifestPath, PathWithEndingSlash(directory)) {
 				return true

@@ -189,7 +189,8 @@ func TestIsManifestCoveredWithDirectories(t *testing.T) {
 			{PackageEcosystem: "npm", Directories: []string{"/npm/stuff/here", "/npm/other"}},
 			{PackageEcosystem: "pip", Directories: []string{"/pip1", "/pip2/"}},
 			{PackageEcosystem: "composer", Directories: []string{"/app"}},
-			{PackageEcosystem: "github-actions", Directories: []string{"/"}}},
+			{PackageEcosystem: "github-actions", Directories: []string{"/"}},
+		},
 	}
 
 	for _, tt := range []struct {
