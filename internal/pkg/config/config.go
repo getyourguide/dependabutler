@@ -101,7 +101,7 @@ type Ignore struct {
 type Update struct {
 	PackageEcosystem              string           `yaml:"package-ecosystem"`
 	Directory                     string           `yaml:"directory"`
-	Directories                   []string         `yaml:"directories"`
+	Directories                   []string         `yaml:"directories,omitempty"`
 	Schedule                      Schedule         `yaml:"schedule,omitempty"`
 	Registries                    []string         `yaml:"registries,omitempty"`
 	CommitMessage                 CommitMessage    `yaml:"commit-message,omitempty"`
