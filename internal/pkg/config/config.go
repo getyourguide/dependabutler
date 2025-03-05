@@ -242,20 +242,6 @@ func ParseDependabotConfig(fileContent []byte) (*DependabotConfig, error) {
 	return &config, nil
 }
 
-func IsPathCovered(manifestPath string, directory string, directories []string) bool {
-	if directory != "" {
-		return strings.HasPrefix(manifestPath, PathWithEndingSlash(directory))
-	}
-	if directories != nil && len(directories) > 0 {
-		for _, directory := range directories {
-			if strings.HasPrefix(manifestPath, PathWithEndingSlash(directory)) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // IsManifestCovered returns if a manifest file is covered within a dependabot.yml config
 func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestType string, updateRegistries []string) bool {
 	if len(config.Updates) == 0 {
@@ -271,7 +257,7 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 			continue
 		}
 		manifestPath := PathWithEndingSlash(GetManifestPath(manifestFile, manifestType))
-		if IsPathCovered(manifestPath, update.Directory, update.Directories) {
+		if isPathCovered(manifestPath, update.Directory, update.Directories) {
 			// update entry is covering the one being checked
 			// in case the latter is using registries, these must be referenced by this entry
 			for _, name := range updateRegistries {
@@ -388,6 +374,7 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 	}
 }
 
+// createUpdateEntry creates a new update entry for a manifest file
 func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig) Update {
 	update := Update{
 		PackageEcosystem:              manifestType,
@@ -537,6 +524,22 @@ func fixNewUpdateConfig(update *Update, manifestType string) {
 	}
 }
 
+// isPathCovered returns if a manifest file is covered within a dependabot.yml config
+func isPathCovered(manifestPath string, directory string, directories []string) bool {
+	if directory != "" {
+		return strings.HasPrefix(manifestPath, PathWithEndingSlash(directory))
+	}
+	if directories != nil && len(directories) > 0 {
+		for _, directory := range directories {
+			if strings.HasPrefix(manifestPath, PathWithEndingSlash(directory)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasDirectorySet checks if a directory is set in an Update
 func hasDirectorySet(update *Update) bool {
 	if update.Directory != "" {
 		return true
