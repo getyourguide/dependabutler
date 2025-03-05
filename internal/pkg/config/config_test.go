@@ -139,7 +139,7 @@ updates:
 	}
 }
 
-func TestIsManifestCovered(t *testing.T) {
+func TestIsManifestCoveredWithDirectory(t *testing.T) {
 	config := DependabotConfig{
 		Updates: []Update{
 			{PackageEcosystem: "docker", Directory: "/"},
@@ -150,6 +150,48 @@ func TestIsManifestCovered(t *testing.T) {
 			{PackageEcosystem: "github-actions", Directory: "/"},
 		},
 	}
+	for _, tt := range []struct {
+		manifestType string
+		manifestFile string
+		expected     bool
+	}{
+		{"", "", false},
+		{"", "dummy.txt", false},
+		{"dummy", "", false},
+		{"dummy", "dummy.txt", false},
+		{"composer", "composer.json", false},
+		{"docker", "Dockerfile", true},
+		{"docker", "sub/dir/Dockerfile", true},
+		{"pip", "pip1/requirements.txt", true},
+		{"pip", "pip1/sub/requirements.txt", true},
+		{"pip", "pip2/requirements.txt", true},
+		{"pip", "pip2/sub/requirements.txt", true},
+		{"pip", "pip123/requirements.txt", false},
+		{"pip", "pip123/sub/requirements.txt", false},
+		{"pip", "requirements.txt", false},
+		{"composer", "app2/requirements.txt", false},
+		{"npm", "npm/stuff/here/package.json", true},
+		{"npm", "npm/stuff/here/sub/dir/package.json", true},
+		{"npm", "npm/stuff/not_here/package.json", false},
+		{"github-actions", ".github/workflows/action.yml", true},
+	} {
+		got := config.IsManifestCovered(tt.manifestFile, tt.manifestType, []string{})
+		if tt.expected != got {
+			t.Errorf("IsManifestCovered(%v, %v) failed; expected %t got %t", tt.manifestType, tt.manifestFile, tt.expected, got)
+		}
+	}
+}
+
+func TestIsManifestCoveredWithDirectories(t *testing.T) {
+	config := DependabotConfig{
+		Updates: []Update{
+			{PackageEcosystem: "docker", Directories: []string{"/", "/something-else"}},
+			{PackageEcosystem: "npm", Directories: []string{"/npm/stuff/here", "/npm/other"}},
+			{PackageEcosystem: "pip", Directories: []string{"/pip1", "/pip2/"}},
+			{PackageEcosystem: "composer", Directories: []string{"/app"}},
+			{PackageEcosystem: "github-actions", Directories: []string{"/"}}},
+	}
+
 	for _, tt := range []struct {
 		manifestType string
 		manifestFile string

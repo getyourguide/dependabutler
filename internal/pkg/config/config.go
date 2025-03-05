@@ -242,6 +242,20 @@ func ParseDependabotConfig(fileContent []byte) (*DependabotConfig, error) {
 	return &config, nil
 }
 
+func IsPathCovered(manifestPath string, directory string, directories []string) bool {
+	if directory != "" {
+		return strings.HasPrefix(manifestPath, PathWithEndingSlash(directory))
+	}
+	if directories != nil && len(directories) > 0 {
+		for _, directory := range directories {
+			if strings.HasPrefix(manifestPath, PathWithEndingSlash(directory)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // IsManifestCovered returns if a manifest file is covered within a dependabot.yml config
 func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestType string, updateRegistries []string) bool {
 	if len(config.Updates) == 0 {
@@ -249,14 +263,15 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 	}
 	for i, update := range config.Updates {
 		ecosystem := update.PackageEcosystem
-		directory := update.Directory
-		if ecosystem == "" || directory == "" {
+		if ecosystem == "" || !hasDirectorySet(&update) {
 			log.Printf("WARN  Invalid dependabot config: %v", update)
 			continue
 		}
-		directory = PathWithEndingSlash(directory)
+		if ecosystem != manifestType {
+			continue
+		}
 		manifestPath := PathWithEndingSlash(GetManifestPath(manifestFile, manifestType))
-		if ecosystem == manifestType && strings.HasPrefix(manifestPath, directory) {
+		if IsPathCovered(manifestPath, update.Directory, update.Directories) {
 			// update entry is covering the one being checked
 			// in case the latter is using registries, these must be referenced by this entry
 			for _, name := range updateRegistries {
