@@ -101,6 +101,7 @@ type Ignore struct {
 type Update struct {
 	PackageEcosystem              string           `yaml:"package-ecosystem"`
 	Directory                     string           `yaml:"directory"`
+	Directories                   []string         `yaml:"directories,omitempty"`
 	Schedule                      Schedule         `yaml:"schedule,omitempty"`
 	Registries                    []string         `yaml:"registries,omitempty"`
 	CommitMessage                 CommitMessage    `yaml:"commit-message,omitempty"`
@@ -219,6 +220,13 @@ func (config *DependabotConfig) Parse(data []byte) error {
 		if update.Directory != "/" && strings.HasSuffix(update.Directory, "/") {
 			config.Updates[i].Directory = strings.TrimSuffix(update.Directory, "/")
 		}
+		if update.Directories != nil {
+			for j, directory := range update.Directories {
+				if directory != "/" && strings.HasSuffix(directory, "/") {
+					config.Updates[i].Directories[j] = strings.TrimSuffix(directory, "/")
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -253,14 +261,15 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 	}
 	for i, update := range config.Updates {
 		ecosystem := update.PackageEcosystem
-		directory := update.Directory
-		if ecosystem == "" || directory == "" {
+		if ecosystem == "" || !hasDirectorySet(&update) {
 			log.Printf("WARN  Invalid dependabot config: %v", update)
 			continue
 		}
-		directory = PathWithEndingSlash(directory)
+		if ecosystem != manifestType {
+			continue
+		}
 		manifestPath := PathWithEndingSlash(GetManifestPath(manifestFile, manifestType))
-		if ecosystem == manifestType && strings.HasPrefix(manifestPath, directory) {
+		if isPathCovered(manifestPath, update.Directory, update.Directories) {
 			// update entry is covering the one being checked
 			// in case the latter is using registries, these must be referenced by this entry
 			for _, name := range updateRegistries {
@@ -377,6 +386,7 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 	}
 }
 
+// createUpdateEntry creates a new update entry for a manifest file
 func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig) Update {
 	update := Update{
 		PackageEcosystem:              manifestType,
@@ -540,12 +550,43 @@ func fixNewUpdateConfig(update *Update, manifestType string) {
 	}
 }
 
+// isPathCovered returns if a manifest file is covered within a dependabot.yml config
+func isPathCovered(manifestPath string, directory string, directories []string) bool {
+	if directory != "" {
+		return strings.HasPrefix(manifestPath, PathWithEndingSlash(directory))
+	}
+	if len(directories) > 0 {
+		for _, directory := range directories {
+			if strings.HasPrefix(manifestPath, PathWithEndingSlash(directory)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasDirectorySet checks if a directory is set in an Update
+func hasDirectorySet(update *Update) bool {
+	if update.Directory != "" {
+		return true
+	}
+	if len(update.Directories) > 0 {
+		for _, directory := range update.Directories {
+			if directory != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // fixNewUpdateConfig fixes the config for an existing Update, if necessary
 func fixExistingUpdateConfig(update *Update) bool {
 	// change path "" to "/"
-	if update.Directory == "" {
+	if !hasDirectorySet(update) {
 		log.Printf("INFO  fixed empty directory in config for %v", update.PackageEcosystem)
 		update.Directory = "/"
+		update.Directories = nil
 		return true
 	}
 	return false
