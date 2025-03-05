@@ -77,6 +77,23 @@ func GetFileContent(client *github.Client, org string, repo string, path string,
 	return bytes.NewBufferString(fileContent).Bytes(), nil
 }
 
+// CheckDirectoryExists checks if a directory exists in the remote GitHub repository.
+func CheckDirectoryExists(client *github.Client, org string, repo string, directory string, branchName string) (bool, error) {
+	ctx := context.Background()
+	opts := &github.RepositoryContentGetOptions{}
+	if branchName != "" {
+		opts.Ref = branchName
+	}
+	_, dirContents, _, err := client.Repositories.GetContents(ctx, org, repo, directory, opts)
+	if err != nil {
+		if strings.Contains(err.Error(), "404 Not Found") {
+			return false, nil
+		}
+		return false, err
+	}
+	return dirContents != nil, nil
+}
+
 // CreateOrUpdatePullRequest creates or updates a PR for changes in dependabot.yml
 func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
 	prParams := toolConfig.PullRequestParameters
@@ -183,6 +200,15 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 		lines = append(lines, "| type | directory | ")
 		lines = append(lines, "| - | - |")
 		for _, update := range changeInfo.FixedUpdates {
+			lines = append(lines, fmt.Sprintf("| %v | %v |", update.Type, update.Directory))
+		}
+	}
+	if len(changeInfo.RemovedUpdates) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "#### 🧹 unused updates removed")
+		lines = append(lines, "| type | directory | ")
+		lines = append(lines, "| - | - |")
+		for _, update := range changeInfo.RemovedUpdates {
 			lines = append(lines, fmt.Sprintf("| %v | %v |", update.Type, update.Directory))
 		}
 	}
