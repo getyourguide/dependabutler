@@ -71,3 +71,7 @@ Initial version.
 
 - Added removing unused updates.
 - Added support for the `directories` property.
+
+## v0.7.1
+
+- Added removing unused registries.

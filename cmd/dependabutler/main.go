@@ -220,7 +220,7 @@ func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, too
 		return nil, config.ChangeInfo{}
 	}
 	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
-	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 || len(changeInfo.FixedUpdates) > 0 || len(changeInfo.RemovedUpdates) > 0 {
+	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 || len(changeInfo.FixedUpdates) > 0 || len(changeInfo.RemovedUpdates) > 0 || len(changeInfo.RemovedRegistries) > 0 {
 		// at least one item in the update block is needed
 		return dependabotConfig.ToYaml(), changeInfo
 	}
