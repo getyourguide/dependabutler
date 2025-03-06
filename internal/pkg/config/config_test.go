@@ -2,7 +2,10 @@ package config
 
 import (
 	"reflect"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestParseToolConfig(t *testing.T) {
@@ -362,5 +365,92 @@ func TestHasDirectorySet(t *testing.T) {
 		if tt.expected != got {
 			t.Errorf("hasDirectorySet(%v) failed; expected %t got %t", tt.update, tt.expected, got)
 		}
+	}
+}
+
+func TestGroupAppliesTo(t *testing.T) {
+	// Test unmarshaling YAML with applies-to field
+	yamlContent := `
+patterns:
+  - "lodash*"
+exclude-patterns:
+  - "lodash-es"
+update-types:
+  - minor
+  - patch
+applies-to: security-updates
+`
+
+	var group Group
+	err := yaml.Unmarshal([]byte(yamlContent), &group)
+	if err != nil {
+		t.Errorf("Failed to unmarshal YAML: %v", err)
+	}
+
+	// Check that the AppliesTo field was correctly unmarshaled
+	if group.AppliesTo != "security-updates" {
+		t.Errorf("Expected AppliesTo to be 'security-updates', got '%s'", group.AppliesTo)
+	}
+
+	// Test unmarshaling YAML without applies-to field
+	yamlWithoutAppliesTo := `
+separator: ":"
+patterns:
+  - "react*"
+update-types:
+  - "major"
+`
+	var groupWithoutAppliesTo Group
+	err = yaml.Unmarshal([]byte(yamlWithoutAppliesTo), &groupWithoutAppliesTo)
+	if err != nil {
+		t.Errorf("Failed to unmarshal YAML: %v", err)
+	}
+
+	// Check that the AppliesTo field is empty when not in YAML
+	if groupWithoutAppliesTo.AppliesTo != "" {
+		t.Errorf("Expected AppliesTo to be empty, got '%s'", groupWithoutAppliesTo.AppliesTo)
+	}
+
+	// Test marshaling Group with AppliesTo field
+	groupWithAppliesTo := Group{
+		Separator:       ",",
+		Patterns:        []string{"axios", "fetch-mock"},
+		ExcludePatterns: []string{"@axios/types"},
+		UpdateTypes:     []string{"major", "minor"},
+		AppliesTo:       "version-updates",
+	}
+
+	marshaled, err := yaml.Marshal(groupWithAppliesTo)
+	if err != nil {
+		t.Errorf("Failed to marshal Group: %v", err)
+	}
+
+	// Unmarshal to verify the applies-to field is included
+	var unmarshaledGroup Group
+	err = yaml.Unmarshal(marshaled, &unmarshaledGroup)
+	if err != nil {
+		t.Errorf("Failed to unmarshal marshaled YAML: %v", err)
+	}
+
+	if unmarshaledGroup.AppliesTo != "version-updates" {
+		t.Errorf("Expected AppliesTo to be 'version-updates', got '%s'", unmarshaledGroup.AppliesTo)
+	}
+
+	// Test marshaling Group with empty AppliesTo field - should be omitted in output
+	groupWithEmptyAppliesTo := Group{
+		Separator:   "/",
+		Patterns:    []string{"webpack*"},
+		UpdateTypes: []string{"patch"},
+	}
+
+	marshaledEmpty, err := yaml.Marshal(groupWithEmptyAppliesTo)
+	if err != nil {
+		t.Errorf("Failed to marshal Group: %v", err)
+	}
+
+	// Convert to string to check if applies-to is present
+	marshaledStr := string(marshaledEmpty)
+	if strings.Contains(marshaledStr, "applies-to") {
+		t.Errorf("Expected 'applies-to' to be omitted, but it was found in the marshaled YAML: %s", marshaledStr)
 	}
 }
