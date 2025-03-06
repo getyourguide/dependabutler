@@ -159,10 +159,11 @@ type CommitMessage struct {
 
 // ChangeInfo holds the changes applied to a config.
 type ChangeInfo struct {
-	NewRegistries  []RegistryInfo
-	NewUpdates     []UpdateInfo
-	FixedUpdates   []UpdateInfo
-	RemovedUpdates []UpdateInfo
+	NewRegistries     []RegistryInfo
+	RemovedRegistries []RegistryInfo
+	NewUpdates        []UpdateInfo
+	FixedUpdates      []UpdateInfo
+	RemovedUpdates    []UpdateInfo
 }
 
 // RegistryInfo holds the properties of a registry, for the change message.
@@ -480,9 +481,11 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	checkDirectoryExistsParams CheckDirectoryExistsParameters,
 ) ChangeInfo {
 	changeInfo := ChangeInfo{
-		NewRegistries: []RegistryInfo{},
-		NewUpdates:    []UpdateInfo{},
-		FixedUpdates:  []UpdateInfo{},
+		NewRegistries:     []RegistryInfo{},
+		RemovedRegistries: []RegistryInfo{},
+		NewUpdates:        []UpdateInfo{},
+		FixedUpdates:      []UpdateInfo{},
+		RemovedUpdates:    []UpdateInfo{},
 	}
 
 	// Base directories must be processed before subdirectories (/ before /app).
@@ -498,7 +501,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	})
 
 	// Remove updates with non-existing directories
-	existingUpdates := []Update{}
+	var existingUpdates []Update
 	for _, update := range config.Updates {
 		if checkDirectoryExists(update.Directory, checkDirectoryExistsParams) {
 			existingUpdates = append(existingUpdates, update)
@@ -520,6 +523,22 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	for _, manifest := range manifestsSorted {
 		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, &changeInfo, loadFileFn, loadFileParams)
 	}
+
+	// Check if there are unused registries to be removed
+	for name, registry := range config.Registries {
+		found := false
+		for _, update := range config.Updates {
+			if util.Contains(update.Registries, name) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			delete(config.Registries, name)
+			changeInfo.RemovedRegistries = append(changeInfo.RemovedRegistries, RegistryInfo{Type: registry.Type, Name: name})
+		}
+	}
+
 	return changeInfo
 }
 
