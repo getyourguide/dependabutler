@@ -129,6 +129,7 @@ type Group struct {
 	Patterns        []string `yaml:"patterns,omitempty"`
 	ExcludePatterns []string `yaml:"exclude-patterns,omitempty"`
 	UpdateTypes     []string `yaml:"update-types,omitempty"`
+	AppliesTo       string   `yaml:"applies-to,omitempty"`
 }
 
 // Registry holds the config items of a registry definition
