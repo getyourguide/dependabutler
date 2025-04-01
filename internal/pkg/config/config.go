@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -41,6 +42,7 @@ type ToolConfig struct {
 	ManifestPatterns      map[string]string            `yaml:"manifest-patterns"`
 	ManifestIgnorePattern string                       `yaml:"manifest-ignore-pattern"`
 	PullRequestParameters PullRequestParameters        `yaml:"pull-request-parameters"`
+	StableGroupPrefixes   *bool                        `yaml:"stable-group-prefixes,omitempty"`
 }
 
 // DefaultRegistries holds the default registries for new update definitions
@@ -525,6 +527,15 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, &changeInfo, loadFileFn, loadFileParams)
 	}
 
+	// Handle stable group prefixes if enabled
+	if toolConfig.StableGroupPrefixes == nil || *toolConfig.StableGroupPrefixes {
+		for i := range config.Updates {
+			if len(config.Updates[i].Groups) > 0 {
+				ensureStableGroupPrefixes(&config.Updates[i])
+			}
+		}
+	}
+
 	// Check if there are unused registries to be removed
 	for name, registry := range config.Registries {
 		found := false
@@ -610,4 +621,70 @@ func fixExistingUpdateConfig(update *Update) bool {
 		return true
 	}
 	return false
+}
+
+// ensureStableGroupPrefixes ensures all group names have a unique numeric prefix (01_, 02_, 03_, etc.)
+// If a group doesn't have a prefix, it adds one.
+func ensureStableGroupPrefixes(update *Update) {
+	if len(update.Groups) == 0 {
+		return
+	}
+
+	// First collect all group names and check if they follow the pattern
+	prefixRegex := regexp.MustCompile(`^(\d{2})_(.+)$`)
+
+	// First check if we need to rename any groups
+	needsRenaming := false
+	existingPrefixes := make(map[string]bool)
+	baseNameToOrigName := make(map[string]string)
+	origNames := make([]string, 0, len(update.Groups))
+
+	for name := range update.Groups {
+		// Check if name already has a numeric prefix
+		matches := prefixRegex.FindStringSubmatch(name)
+		var baseName string
+
+		if matches != nil {
+			// Has a prefix, extract the base name and prefix
+			prefix := matches[1]
+			baseName = matches[2]
+
+			if existingPrefixes[prefix] {
+				// Duplicate prefix found, need to rename
+				needsRenaming = true
+			}
+			existingPrefixes[prefix] = true
+		} else {
+			// No prefix found, need to rename
+			baseName = name
+			needsRenaming = true
+		}
+
+		baseNameToOrigName[baseName] = name
+		origNames = append(origNames, name)
+	}
+
+	// If all groups already have unique prefixes, no need to change
+	if !needsRenaming {
+		return
+	}
+
+	// Sort original names for stable ordering
+	sort.Strings(origNames)
+
+	// Create a new map with properly prefixed groups
+	newGroups := make(map[string]Group)
+	for i, origName := range origNames {
+		baseName := origName
+		// If it has a prefix, extract the base name
+		matches := prefixRegex.FindStringSubmatch(origName)
+		if matches != nil {
+			baseName = matches[2]
+		}
+		newName := fmt.Sprintf("%02d_%s", i+1, baseName)
+		newGroups[newName] = update.Groups[origName]
+	}
+
+	// Replace the groups with the new prefixed map
+	update.Groups = newGroups
 }

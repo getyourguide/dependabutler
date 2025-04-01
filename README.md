@@ -23,15 +23,16 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 
 ### Parameters
 
-| parameter  | mandatory | default             | description                                   |
-|------------|-----------|---------------------|-----------------------------------------------|
-| mode       | yes       | local               | local or remote                               |
-| configFile | yes       | dependabutler.yml   | yml file holding the config for the tool      |
-| execute    | yes       | false               | true: create PR / write file; false: log-only |
-| dir        | ¹         | *current directory* | directory containing repositories             |
-| org        | ²         |                     | organisation name on GitHub                   |
-| repo       | ³         |                     | name of the repository to scan                |
-| repoFile   | ³         |                     | file containing repositories, one per line    |
+| parameter           | mandatory | default             | description                                   |
+|---------------------|-----------|---------------------|-----------------------------------------------|
+| mode                | yes       | local               | local or remote                               |
+| configFile          | yes       | dependabutler.yml   | yml file holding the config for the tool      |
+| execute             | yes       | false               | true: create PR / write file; false: log-only |
+| dir                 | ¹         | *current directory* | directory containing repositories             |
+| org                 | ²         |                     | organisation name on GitHub                   |
+| repo                | ³         |                     | name of the repository to scan                |
+| repoFile            | ³         |                     | file containing repositories, one per line    |
+| stable-group-prefixes | no      | true                | ensures group names have numeric prefixes (01_, 02_, etc.) |
 
 ¹ mandatory for local mode  
 ² mandatory for remote mode  
