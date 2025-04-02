@@ -75,3 +75,7 @@ Initial version.
 ## v0.7.1
 
 - Added removing unused registries.
+
+## v0.7.2
+
+- Added `stable-group-prefixes` option (default: true) that ensures group names have unique numeric prefixes (01_, 02_, 03_, etc.).

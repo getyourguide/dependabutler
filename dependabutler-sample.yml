@@ -87,6 +87,11 @@ pull-request-parameters:
   sleep-after-pr-action: 2
 
 #
+# feature flags
+#
+stable-group-prefixes: true  # Ensures group names have numeric prefixes (01_, 02_, etc.)
+
+#
 # patterns for detecting manifest files
 #
 #   - can be extended in case you are using custom file names by convention

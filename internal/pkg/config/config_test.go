@@ -454,3 +454,142 @@ update-types:
 		t.Errorf("Expected 'applies-to' to be omitted, but it was found in the marshaled YAML: %s", marshaledStr)
 	}
 }
+
+func TestEnsureStableGroupPrefixes(t *testing.T) {
+	tests := []struct {
+		name     string
+		update   Update
+		expected map[string]Group
+	}{
+		{
+			name: "No groups",
+			update: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+				Groups:           nil,
+			},
+			expected: nil,
+		},
+		{
+			name: "Empty groups",
+			update: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+				Groups:           map[string]Group{},
+			},
+			expected: map[string]Group{},
+		},
+		{
+			name: "Already prefixed groups",
+			update: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+				Groups: map[string]Group{
+					"01_frontend": {
+						Patterns: []string{"react*", "vue*"},
+					},
+					"02_backend": {
+						Patterns: []string{"express*", "fastify*"},
+					},
+				},
+			},
+			expected: map[string]Group{
+				"01_frontend": {
+					Patterns: []string{"react*", "vue*"},
+				},
+				"02_backend": {
+					Patterns: []string{"express*", "fastify*"},
+				},
+			},
+		},
+		{
+			name: "Mixed prefixed and non-prefixed groups",
+			update: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+				Groups: map[string]Group{
+					"01_frontend": {
+						Patterns: []string{"react*", "vue*"},
+					},
+					"backend": {
+						Patterns: []string{"express*", "fastify*"},
+					},
+				},
+			},
+			expected: map[string]Group{
+				"01_frontend": {
+					Patterns: []string{"react*", "vue*"},
+				},
+				"02_backend": {
+					Patterns: []string{"express*", "fastify*"},
+				},
+			},
+		},
+		{
+			name: "All non-prefixed groups",
+			update: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+				Groups: map[string]Group{
+					"frontend": {
+						Patterns: []string{"react*", "vue*"},
+					},
+					"backend": {
+						Patterns: []string{"express*", "fastify*"},
+					},
+					"tooling": {
+						Patterns: []string{"webpack*", "babel*"},
+					},
+				},
+			},
+			expected: map[string]Group{
+				"01_backend": {
+					Patterns: []string{"express*", "fastify*"},
+				},
+				"02_frontend": {
+					Patterns: []string{"react*", "vue*"},
+				},
+				"03_tooling": {
+					Patterns: []string{"webpack*", "babel*"},
+				},
+			},
+		},
+		{
+			name: "Duplicate prefixes",
+			update: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+				Groups: map[string]Group{
+					"01_frontend": {
+						Patterns: []string{"react*", "vue*"},
+					},
+					"01_backend": {
+						Patterns: []string{"express*", "fastify*"},
+					},
+				},
+			},
+			expected: map[string]Group{
+				"01_backend": {
+					Patterns: []string{"express*", "fastify*"},
+				},
+				"02_frontend": {
+					Patterns: []string{"react*", "vue*"},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Make a copy of the update to avoid modifying the test case
+			update := tt.update
+
+			ensureStableGroupPrefixes(&update)
+
+			// Check if the groups match the expected values
+			if !reflect.DeepEqual(update.Groups, tt.expected) {
+				t.Errorf("ensureStableGroupPrefixes() failed\nExpected: %v\nGot:      %v", tt.expected, update.Groups)
+			}
+		})
+	}
+}
