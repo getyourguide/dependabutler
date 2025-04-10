@@ -142,6 +142,41 @@ updates:
 	}
 }
 
+func TestParseDependabotConfigWithDirectories(t *testing.T) {
+	for _, tt := range []struct {
+		configString string
+		expected     string
+	}{
+		{
+			`version: 2
+updates:
+  - package-ecosystem: docker
+    directories:
+      - "/one"
+      - "/two"
+      - "/three"
+`,
+			`version: 2
+updates:
+  - package-ecosystem: docker
+    directories:
+      - /one
+      - /two
+      - /three
+`,
+		},
+	} {
+		parsedConfig, err := ParseDependabotConfig([]byte(tt.configString))
+		if err != nil {
+			t.Errorf("TestParseDependabotConfigWithDirectories() failed;\n  parsing error %v", err)
+		}
+		got := (string)(parsedConfig.ToYaml())
+		if tt.expected != got {
+			t.Errorf("TestParseDependabotConfigWithDirectories() failed;\n  expected \n%v\n  got      \n%v\n", tt.expected, got)
+		}
+	}
+}
+
 func TestIsManifestCoveredWithDirectory(t *testing.T) {
 	config := DependabotConfig{
 		Updates: []Update{

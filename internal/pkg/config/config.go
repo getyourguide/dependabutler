@@ -102,7 +102,7 @@ type Ignore struct {
 // Update holds the config items of an update definition
 type Update struct {
 	PackageEcosystem              string           `yaml:"package-ecosystem"`
-	Directory                     string           `yaml:"directory"`
+	Directory                     string           `yaml:"directory,omitempty"`
 	Directories                   []string         `yaml:"directories,omitempty"`
 	Schedule                      Schedule         `yaml:"schedule,omitempty"`
 	Registries                    []string         `yaml:"registries,omitempty"`
