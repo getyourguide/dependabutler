@@ -273,7 +273,7 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 			continue
 		}
 		manifestPath := PathWithEndingSlash(GetManifestPath(manifestFile, manifestType))
-		if isPathCovered(manifestPath, update.Directory, update.Directories) {
+		if isPathCovered(manifestPath, manifestType, update.Directory, update.Directories) {
 			// update entry is covering the one being checked
 			// in case the latter is using registries, these must be referenced by this entry
 			for _, name := range updateRegistries {
@@ -582,13 +582,19 @@ func fixNewUpdateConfig(update *Update, manifestType string) {
 }
 
 // isPathCovered returns if a manifest file is covered within a dependabot.yml config
-func isPathCovered(manifestPath string, directory string, directories []string) bool {
+// special case for Dockerfiles, every subdirectory needs to be listed individually
+func isPathCovered(manifestPath string, manifestType string, directory string, directories []string) bool {
+	cmpFunc := strings.HasPrefix
+	if manifestType == "docker" {
+		// special case for Dockerfiles, every subdirectory needs to be listed individually
+		cmpFunc = func(a, b string) bool { return a == b }
+	}
 	if directory != "" {
-		return strings.HasPrefix(manifestPath, PathWithEndingSlash(directory))
+		return cmpFunc(PathWithEndingSlash(manifestPath), PathWithEndingSlash(directory))
 	}
 	if len(directories) > 0 {
 		for _, directory := range directories {
-			if strings.HasPrefix(manifestPath, PathWithEndingSlash(directory)) {
+			if cmpFunc(PathWithEndingSlash(manifestPath), PathWithEndingSlash(directory)) {
 				return true
 			}
 		}
