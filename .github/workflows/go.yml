@@ -54,9 +54,9 @@ jobs:
       - name: Test with coverage report
         run: |
           go test -vet=off -count=1 ./... -coverprofile cover.out
-          go tool cover -html cover.out -o cover.html
+          go tool cover -html cover.out -o coverage-${{ matrix.platform }}.html
       - name: Archive code coverage report
         uses: actions/upload-artifact@v4
         with:
-          name: code-coverage-report
+          name: code-coverage-report-${{ matrix.platform }}
           path: coverage-${{ matrix.platform }}.html
