@@ -18,6 +18,13 @@ update-defaults:
     prefix: "[dependabutler] "
   open-pull-requests-limit: 10
   rebase-strategy: auto
+  cooldown:
+    semver-major-days: 21
+    semver-minor-days: 7
+    semver-patch-days: 3
+    default-days: 10
+    exclude:
+      - "@getyourguide*"
 
 #
 # default settings for new "update" entities of a *specific* manifest type
@@ -35,6 +42,14 @@ update-overrides:
     schedule:
       interval: weekly
       day: wednesday
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 3
+      semver-patch-days: 1
+      default-days: 30
+      exclude:
+        - "@getyourguide*"
+        - "actions/*"
 
 #
 # default registries

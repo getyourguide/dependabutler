@@ -76,6 +76,7 @@ type UpdateDefaults struct {
 	OpenPullRequestsLimit         int           `yaml:"open-pull-requests-limit"`
 	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution"`
 	RebaseStrategy                string        `yaml:"rebase-strategy"`
+	Cooldown                      Cooldown      `yaml:"cooldown"`
 }
 
 // DependabotConfig holds the configuration defined in dependabot.yml
@@ -123,6 +124,7 @@ type Update struct {
 	TargetBranch       string   `yaml:"target-branch,omitempty"`
 	Vendor             bool     `yaml:"vendor,omitempty"`
 	VersioningStrategy string   `yaml:"versioning-strategy,omitempty"`
+	Cooldown           Cooldown `yaml:"cooldown,omitempty"`
 }
 
 // Group holds the config items of a group definition
@@ -158,6 +160,16 @@ type CommitMessage struct {
 	Prefix            string `yaml:"prefix,omitempty"`
 	PrefixDevelopment string `yaml:"prefix-development,omitempty"`
 	Include           string `yaml:"include,omitempty"`
+}
+
+// Cooldown holds the cooldown configuration for different semver update types
+type Cooldown struct {
+	SemverMajorDays int      `yaml:"semver-major-days,omitempty"`
+	SemverMinorDays int      `yaml:"semver-minor-days,omitempty"`
+	SemverPatchDays int      `yaml:"semver-patch-days,omitempty"`
+	DefaultDays     int      `yaml:"default-days,omitempty"`
+	Include         []string `yaml:"include,omitempty"`
+	Exclude         []string `yaml:"exclude,omitempty"`
 }
 
 // ChangeInfo holds the changes applied to a config.
@@ -392,6 +404,21 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 
 // createUpdateEntry creates a new update entry for a manifest file
 func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig) Update {
+	// Create default cooldown configuration for all ecosystems
+	defaultCooldown := Cooldown{
+		SemverMajorDays: 21,
+		SemverMinorDays: 7,
+		SemverPatchDays: 3,
+		DefaultDays:     10,
+		Exclude:         []string{"@getyourguide*"},
+	}
+	
+	// Use configured cooldown if available, otherwise use default
+	cooldown := defaultCooldown
+	if toolConfig.UpdateDefaults.Cooldown != (Cooldown{}) {
+		cooldown = toolConfig.UpdateDefaults.Cooldown
+	}
+
 	update := Update{
 		PackageEcosystem:              manifestType,
 		Directory:                     manifestPath,
@@ -400,6 +427,7 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		OpenPullRequestsLimit:         toolConfig.UpdateDefaults.OpenPullRequestsLimit,
 		RebaseStrategy:                toolConfig.UpdateDefaults.RebaseStrategy,
 		InsecureExternalCodeExecution: toolConfig.UpdateDefaults.InsecureExternalCodeExecution,
+		Cooldown:                      cooldown,
 	}
 	// apply override properties, if defined
 	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
@@ -517,7 +545,14 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	// Fix existing updates, if necessary
 	for i := range config.Updates {
 		update := &config.Updates[i]
+		fixed := false
 		if fixExistingUpdateConfig(update) {
+			fixed = true
+		}
+		if addCooldownToExistingUpdate(update) {
+			fixed = true
+		}
+		if fixed {
 			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
 		}
 	}
@@ -570,6 +605,9 @@ func applyOverrides(update *Update, overrides UpdateDefaults) {
 	}
 	if overrides.InsecureExternalCodeExecution != "" {
 		update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
+	}
+	if overrides.Cooldown != (Cooldown{}) {
+		update.Cooldown = overrides.Cooldown
 	}
 }
 
@@ -693,4 +731,39 @@ func ensureStableGroupPrefixes(update *Update) {
 
 	// Replace the groups with the new prefixed map
 	update.Groups = newGroups
+}
+
+// addCooldownToExistingUpdate adds cooldown configuration to existing updates that don't have it
+func addCooldownToExistingUpdate(update *Update) bool {
+	// Check if any timing values are already configured
+	hasTimingConfig := update.Cooldown.SemverMajorDays != 0 || 
+	                   update.Cooldown.SemverMinorDays != 0 || 
+	                   update.Cooldown.SemverPatchDays != 0 || 
+	                   update.Cooldown.DefaultDays != 0
+
+	// If timing is already configured, don't modify anything
+	if hasTimingConfig {
+		return false
+	}
+
+	// Preserve existing exclude/include lists, add default timing values
+	existingExclude := update.Cooldown.Exclude
+	existingInclude := update.Cooldown.Include
+	
+	// If no exclude list exists, use our default
+	if len(existingExclude) == 0 {
+		existingExclude = []string{"@getyourguide*"}
+	}
+
+	// Add default timing configuration while preserving user's exclude/include
+	update.Cooldown = Cooldown{
+		SemverMajorDays: 21,
+		SemverMinorDays: 7,
+		SemverPatchDays: 3,
+		DefaultDays:     10,
+		Include:         existingInclude,
+		Exclude:         existingExclude,
+	}
+
+	return true
 }

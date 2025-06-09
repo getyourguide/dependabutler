@@ -628,3 +628,30 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 		})
 	}
 }
+
+func TestCooldownBasics(t *testing.T) {
+	// Test new manifest gets cooldown
+	config := DependabotConfig{}
+	toolConfig := ToolConfig{}
+	changeInfo := ChangeInfo{}
+	config.ProcessManifest("package.json", "npm", toolConfig, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
+	
+	if len(config.Updates) != 1 {
+		t.Errorf("Expected 1 update, got %d", len(config.Updates))
+		return
+	}
+	
+	cooldown := config.Updates[0].Cooldown
+	if cooldown.DefaultDays != 10 || cooldown.SemverMajorDays != 21 {
+		t.Errorf("Expected default cooldown values, got %+v", cooldown)
+	}
+	
+	// Test existing cooldown preservation
+	update := Update{Cooldown: Cooldown{SemverMajorDays: 15}}
+	if addCooldownToExistingUpdate(&update) {
+		t.Error("Should not modify existing cooldown")
+	}
+	if update.Cooldown.SemverMajorDays != 15 {
+		t.Error("Existing cooldown was modified")
+	}
+}
