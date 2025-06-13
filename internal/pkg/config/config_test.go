@@ -629,7 +629,7 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 	}
 }
 
-func TestCooldownBasics(t *testing.T) {
+func TestCooldown(t *testing.T) {
 	// Test new manifest gets cooldown from config
 	config := DependabotConfig{}
 	toolConfig := ToolConfig{
