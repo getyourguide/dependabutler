@@ -725,34 +725,44 @@ func ensureStableGroupPrefixes(update *Update) {
 
 // addCooldownToExistingUpdate adds cooldown configuration to existing updates that don't have it
 func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
-	hasCooldonwConfig := update.Cooldown.SemverMajorDays != 0 && 
-	                   update.Cooldown.SemverMinorDays != 0 && 
-	                   update.Cooldown.SemverPatchDays != 0 && 
-	                   update.Cooldown.DefaultDays != 0
+	configCooldown := toolConfig.UpdateDefaults.Cooldown
+	modified := false
 
-	if hasCooldonwConfig {
-		return false
+	// Only add timing fields that are configured in the config and missing in the update
+	if configCooldown.SemverMajorDays != 0 && update.Cooldown.SemverMajorDays == 0 {
+		update.Cooldown.SemverMajorDays = configCooldown.SemverMajorDays
+		modified = true
+	}
+	if configCooldown.SemverMinorDays != 0 && update.Cooldown.SemverMinorDays == 0 {
+		update.Cooldown.SemverMinorDays = configCooldown.SemverMinorDays
+		modified = true
+	}
+	if configCooldown.SemverPatchDays != 0 && update.Cooldown.SemverPatchDays == 0 {
+		update.Cooldown.SemverPatchDays = configCooldown.SemverPatchDays
+		modified = true
+	}
+	if configCooldown.DefaultDays != 0 && update.Cooldown.DefaultDays == 0 {
+		update.Cooldown.DefaultDays = configCooldown.DefaultDays
+		modified = true
 	}
 
-	// Preserve existing exclude/include lists, or use config defaults if none exist
-	existingExclude := update.Cooldown.Exclude
-	existingInclude := update.Cooldown.Include
-	if len(existingExclude) == 0 {
-		existingExclude = toolConfig.UpdateDefaults.Cooldown.Exclude
+	// Extend include/exclude lists with config values (merge, don't replace)
+	if len(configCooldown.Include) > 0 {
+		for _, configItem := range configCooldown.Include {
+			if !util.Contains(update.Cooldown.Include, configItem) {
+				update.Cooldown.Include = append(update.Cooldown.Include, configItem)
+				modified = true
+			}
+		}
 	}
-	if len(existingInclude) == 0 {
-		existingInclude = toolConfig.UpdateDefaults.Cooldown.Include
-	}
-
-	// Add timing configuration from config file while preserving user's exclude/include
-	update.Cooldown = Cooldown{
-		SemverMajorDays: toolConfig.UpdateDefaults.Cooldown.SemverMajorDays,
-		SemverMinorDays: toolConfig.UpdateDefaults.Cooldown.SemverMinorDays,
-		SemverPatchDays: toolConfig.UpdateDefaults.Cooldown.SemverPatchDays,
-		DefaultDays:     toolConfig.UpdateDefaults.Cooldown.DefaultDays,
-		Include:         existingInclude,
-		Exclude:         existingExclude,
+	if len(configCooldown.Exclude) > 0 {
+		for _, configItem := range configCooldown.Exclude {
+			if !util.Contains(update.Cooldown.Exclude, configItem) {
+				update.Cooldown.Exclude = append(update.Cooldown.Exclude, configItem)
+				modified = true
+			}
+		}
 	}
 
-	return true
+	return modified
 }

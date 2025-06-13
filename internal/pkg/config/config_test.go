@@ -656,12 +656,54 @@ func TestCooldownBasics(t *testing.T) {
 		t.Errorf("Expected config cooldown values, got %+v", cooldown)
 	}
 	
-	// Test existing cooldown preservation
-	update := Update{Cooldown: Cooldown{SemverMajorDays: 15, SemverMinorDays: 5, SemverPatchDays: 2, DefaultDays: 10}}
+	// Test existing cooldown preservation when config excludes are already present
+	update := Update{Cooldown: Cooldown{
+		SemverMajorDays: 15, 
+		SemverMinorDays: 5, 
+		SemverPatchDays: 2, 
+		DefaultDays: 10,
+		Exclude: []string{"@example*"}, // Already has the same exclude as config
+	}}
 	if addCooldownToExistingUpdate(&update, toolConfig) {
-		t.Error("Should not modify existing cooldown")
+		t.Error("Should not modify existing cooldown when all fields and lists are already present")
 	}
 	if update.Cooldown.SemverMajorDays != 15 {
 		t.Error("Existing cooldown was modified")
+	}
+	
+	// Test partial cooldown addition - only add missing fields
+	partialUpdate := Update{Cooldown: Cooldown{SemverMajorDays: 20}}
+	if !addCooldownToExistingUpdate(&partialUpdate, toolConfig) {
+		t.Error("Should modify partial cooldown")
+	}
+	if partialUpdate.Cooldown.SemverMajorDays != 20 {
+		t.Error("Existing SemverMajorDays should be preserved")
+	}
+	if partialUpdate.Cooldown.DefaultDays != 66 {
+		t.Error("Missing DefaultDays should be added from config")
+	}
+	
+	// Test include/exclude list merging
+	mergeUpdate := Update{Cooldown: Cooldown{
+		Exclude: []string{"@existing*"},
+	}}
+	if !addCooldownToExistingUpdate(&mergeUpdate, toolConfig) {
+		t.Error("Should modify update to merge exclude lists")
+	}
+	expectedExcludes := []string{"@existing*", "@example*"}
+	if len(mergeUpdate.Cooldown.Exclude) != 2 {
+		t.Errorf("Expected 2 exclude items, got %d", len(mergeUpdate.Cooldown.Exclude))
+	}
+	for _, expected := range expectedExcludes {
+		found := false
+		for _, actual := range mergeUpdate.Cooldown.Exclude {
+			if actual == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected exclude item %s not found in %v", expected, mergeUpdate.Cooldown.Exclude)
+		}
 	}
 }
