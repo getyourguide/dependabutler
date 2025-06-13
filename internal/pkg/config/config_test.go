@@ -630,9 +630,19 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 }
 
 func TestCooldownBasics(t *testing.T) {
-	// Test new manifest gets cooldown
+	// Test new manifest gets cooldown from config
 	config := DependabotConfig{}
-	toolConfig := ToolConfig{}
+	toolConfig := ToolConfig{
+		UpdateDefaults: UpdateDefaults{
+			Cooldown: Cooldown{
+				SemverMajorDays: 99,
+				SemverMinorDays: 88,
+				SemverPatchDays: 77,
+				DefaultDays:     66,
+				Exclude:         []string{"@example*"},
+			},
+		},
+	}
 	changeInfo := ChangeInfo{}
 	config.ProcessManifest("package.json", "npm", toolConfig, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
 	
@@ -642,13 +652,13 @@ func TestCooldownBasics(t *testing.T) {
 	}
 	
 	cooldown := config.Updates[0].Cooldown
-	if cooldown.DefaultDays != 10 || cooldown.SemverMajorDays != 21 {
-		t.Errorf("Expected default cooldown values, got %+v", cooldown)
+	if cooldown.DefaultDays != 66 || cooldown.SemverMajorDays != 99 {
+		t.Errorf("Expected config cooldown values, got %+v", cooldown)
 	}
 	
 	// Test existing cooldown preservation
-	update := Update{Cooldown: Cooldown{SemverMajorDays: 15}}
-	if addCooldownToExistingUpdate(&update) {
+	update := Update{Cooldown: Cooldown{SemverMajorDays: 15, SemverMinorDays: 5, SemverPatchDays: 2, DefaultDays: 10}}
+	if addCooldownToExistingUpdate(&update, toolConfig) {
 		t.Error("Should not modify existing cooldown")
 	}
 	if update.Cooldown.SemverMajorDays != 15 {

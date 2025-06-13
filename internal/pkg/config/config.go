@@ -404,20 +404,8 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 
 // createUpdateEntry creates a new update entry for a manifest file
 func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig) Update {
-	// Create default cooldown configuration for all ecosystems
-	defaultCooldown := Cooldown{
-		SemverMajorDays: 21,
-		SemverMinorDays: 7,
-		SemverPatchDays: 3,
-		DefaultDays:     10,
-		Exclude:         []string{"@getyourguide*"},
-	}
-	
-	// Use configured cooldown if available, otherwise use default
-	cooldown := defaultCooldown
-	if toolConfig.UpdateDefaults.Cooldown != (Cooldown{}) {
-		cooldown = toolConfig.UpdateDefaults.Cooldown
-	}
+	// Use cooldown configuration from config file
+	cooldown := toolConfig.UpdateDefaults.Cooldown
 
 	update := Update{
 		PackageEcosystem:              manifestType,
@@ -549,7 +537,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		if fixExistingUpdateConfig(update) {
 			fixed = true
 		}
-		if addCooldownToExistingUpdate(update) {
+		if addCooldownToExistingUpdate(update, toolConfig) {
 			fixed = true
 		}
 		if fixed {
@@ -606,7 +594,9 @@ func applyOverrides(update *Update, overrides UpdateDefaults) {
 	if overrides.InsecureExternalCodeExecution != "" {
 		update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
 	}
-	if overrides.Cooldown != (Cooldown{}) {
+	if overrides.Cooldown.SemverMajorDays != 0 || overrides.Cooldown.SemverMinorDays != 0 || 
+		overrides.Cooldown.SemverPatchDays != 0 || overrides.Cooldown.DefaultDays != 0 ||
+		len(overrides.Cooldown.Include) > 0 || len(overrides.Cooldown.Exclude) > 0 {
 		update.Cooldown = overrides.Cooldown
 	}
 }
@@ -734,7 +724,7 @@ func ensureStableGroupPrefixes(update *Update) {
 }
 
 // addCooldownToExistingUpdate adds cooldown configuration to existing updates that don't have it
-func addCooldownToExistingUpdate(update *Update) bool {
+func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 	hasCooldonwConfig := update.Cooldown.SemverMajorDays != 0 && 
 	                   update.Cooldown.SemverMinorDays != 0 && 
 	                   update.Cooldown.SemverPatchDays != 0 && 
@@ -751,12 +741,12 @@ func addCooldownToExistingUpdate(update *Update) bool {
 		existingExclude = []string{"@getyourguide*"}
 	}
 
-	// Add default timing configuration while preserving user's exclude/include
+	// Add timing configuration from config file while preserving user's exclude/include
 	update.Cooldown = Cooldown{
-		SemverMajorDays: 21,
-		SemverMinorDays: 7,
-		SemverPatchDays: 3,
-		DefaultDays:     10,
+		SemverMajorDays: toolConfig.UpdateDefaults.Cooldown.SemverMajorDays,
+		SemverMinorDays: toolConfig.UpdateDefaults.Cooldown.SemverMinorDays,
+		SemverPatchDays: toolConfig.UpdateDefaults.Cooldown.SemverPatchDays,
+		DefaultDays:     toolConfig.UpdateDefaults.Cooldown.DefaultDays,
 		Include:         existingInclude,
 		Exclude:         existingExclude,
 	}
