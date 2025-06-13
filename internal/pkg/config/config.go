@@ -734,7 +734,6 @@ func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 	return modified
 }
 
-// addMissingTimingField adds a timing field value if it's missing (zero) and config has a value
 func addMissingTimingField(target *int, configValue int) bool {
 	if configValue != 0 && *target == 0 {
 		*target = configValue
