@@ -735,14 +735,12 @@ func ensureStableGroupPrefixes(update *Update) {
 
 // addCooldownToExistingUpdate adds cooldown configuration to existing updates that don't have it
 func addCooldownToExistingUpdate(update *Update) bool {
-	// Check if any timing values are already configured
-	hasTimingConfig := update.Cooldown.SemverMajorDays != 0 || 
-	                   update.Cooldown.SemverMinorDays != 0 || 
-	                   update.Cooldown.SemverPatchDays != 0 || 
+	hasCooldonwConfig := update.Cooldown.SemverMajorDays != 0 && 
+	                   update.Cooldown.SemverMinorDays != 0 && 
+	                   update.Cooldown.SemverPatchDays != 0 && 
 	                   update.Cooldown.DefaultDays != 0
 
-	// If timing is already configured, don't modify anything
-	if hasTimingConfig {
+	if hasCooldonwConfig {
 		return false
 	}
 
