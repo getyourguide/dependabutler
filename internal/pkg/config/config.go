@@ -734,11 +734,14 @@ func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 		return false
 	}
 
-	// Preserve existing exclude/include lists, add default timing values
+	// Preserve existing exclude/include lists, or use config defaults if none exist
 	existingExclude := update.Cooldown.Exclude
 	existingInclude := update.Cooldown.Include
 	if len(existingExclude) == 0 {
-		existingExclude = []string{"@getyourguide*"}
+		existingExclude = toolConfig.UpdateDefaults.Cooldown.Exclude
+	}
+	if len(existingInclude) == 0 {
+		existingInclude = toolConfig.UpdateDefaults.Cooldown.Include
 	}
 
 	// Add timing configuration from config file while preserving user's exclude/include

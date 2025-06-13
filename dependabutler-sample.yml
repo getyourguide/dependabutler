@@ -23,8 +23,10 @@ update-defaults:
     semver-minor-days: 7
     semver-patch-days: 3
     default-days: 10
+    include:
+      - "some-library/*"
     exclude:
-      - "@getyourguide*"
+      - "some-library/*"
 
 #
 # default settings for new "update" entities of a *specific* manifest type
@@ -47,8 +49,10 @@ update-overrides:
       semver-minor-days: 7
       semver-patch-days: 3
       default-days: 10
+      include:
+      - "some-library/*"
       exclude:
-        - "@getyourguide*"
+      - "some-library/*"
 
 #
 # default registries
