@@ -721,18 +721,16 @@ func ensureStableGroupPrefixes(update *Update) {
 	update.Groups = newGroups
 }
 
-// hasCooldownConfig checks if a Cooldown struct has any configuration
 func hasCooldownConfig(cooldown Cooldown) bool {
 	return cooldown.SemverMajorDays != 0 || cooldown.SemverMinorDays != 0 || 
 		cooldown.SemverPatchDays != 0 || cooldown.DefaultDays != 0 ||
 		len(cooldown.Include) > 0 || len(cooldown.Exclude) > 0
 }
 
-// addCooldownToExistingUpdate adds cooldown configuration to existing updates that don't have it
+// Adds cooldown configuration to existing updates that don't have it
 func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 	configCooldown := toolConfig.UpdateDefaults.Cooldown
 	
-	// Skip if no cooldown configured
 	if !hasCooldownConfig(configCooldown) {
 		return false
 	}
@@ -764,7 +762,6 @@ func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 	return modified
 }
 
-// mergeStringLists adds items from source to target list if not already present
 func mergeStringLists(target *[]string, source []string) bool {
 	modified := false
 	for _, item := range source {
