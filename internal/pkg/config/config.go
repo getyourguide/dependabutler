@@ -747,8 +747,6 @@ func addCooldownToExistingUpdate(update *Update) bool {
 	// Preserve existing exclude/include lists, add default timing values
 	existingExclude := update.Cooldown.Exclude
 	existingInclude := update.Cooldown.Include
-	
-	// If no exclude list exists, use our default
 	if len(existingExclude) == 0 {
 		existingExclude = []string{"@getyourguide*"}
 	}
