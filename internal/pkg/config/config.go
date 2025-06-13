@@ -533,10 +533,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	// Fix existing updates, if necessary
 	for i := range config.Updates {
 		update := &config.Updates[i]
-		if fixExistingUpdateConfig(update) {
-			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
-		}
-		if addCooldownToExistingUpdate(update, toolConfig) {
+		if fixExistingUpdateConfig(update) || addCooldownToExistingUpdate(update, toolConfig) {
 			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
 		}
 	}
