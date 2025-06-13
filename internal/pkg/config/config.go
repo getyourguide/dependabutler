@@ -533,14 +533,10 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	// Fix existing updates, if necessary
 	for i := range config.Updates {
 		update := &config.Updates[i]
-		fixed := false
 		if fixExistingUpdateConfig(update) {
-			fixed = true
+			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
 		}
 		if addCooldownToExistingUpdate(update, toolConfig) {
-			fixed = true
-		}
-		if fixed {
 			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
 		}
 	}
@@ -732,28 +728,25 @@ func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 	modified := false
 
 	// Add missing timing fields
-	if configCooldown.SemverMajorDays != 0 && update.Cooldown.SemverMajorDays == 0 {
-		update.Cooldown.SemverMajorDays = configCooldown.SemverMajorDays
-		modified = true
-	}
-	if configCooldown.SemverMinorDays != 0 && update.Cooldown.SemverMinorDays == 0 {
-		update.Cooldown.SemverMinorDays = configCooldown.SemverMinorDays
-		modified = true
-	}
-	if configCooldown.SemverPatchDays != 0 && update.Cooldown.SemverPatchDays == 0 {
-		update.Cooldown.SemverPatchDays = configCooldown.SemverPatchDays
-		modified = true
-	}
-	if configCooldown.DefaultDays != 0 && update.Cooldown.DefaultDays == 0 {
-		update.Cooldown.DefaultDays = configCooldown.DefaultDays
-		modified = true
-	}
+	modified = addMissingTimingField(&update.Cooldown.SemverMajorDays, configCooldown.SemverMajorDays) || modified
+	modified = addMissingTimingField(&update.Cooldown.SemverMinorDays, configCooldown.SemverMinorDays) || modified
+	modified = addMissingTimingField(&update.Cooldown.SemverPatchDays, configCooldown.SemverPatchDays) || modified
+	modified = addMissingTimingField(&update.Cooldown.DefaultDays, configCooldown.DefaultDays) || modified
 
 	// Extend include/exclude lists (merge, don't replace)
 	modified = mergeStringLists(&update.Cooldown.Include, configCooldown.Include) || modified
 	modified = mergeStringLists(&update.Cooldown.Exclude, configCooldown.Exclude) || modified
 
 	return modified
+}
+
+// addMissingTimingField adds a timing field value if it's missing (zero) and config has a value
+func addMissingTimingField(target *int, configValue int) bool {
+	if configValue != 0 && *target == 0 {
+		*target = configValue
+		return true
+	}
+	return false
 }
 
 func mergeStringLists(target *[]string, source []string) bool {
