@@ -594,9 +594,7 @@ func applyOverrides(update *Update, overrides UpdateDefaults) {
 	if overrides.InsecureExternalCodeExecution != "" {
 		update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
 	}
-	if overrides.Cooldown.SemverMajorDays != 0 || overrides.Cooldown.SemverMinorDays != 0 || 
-		overrides.Cooldown.SemverPatchDays != 0 || overrides.Cooldown.DefaultDays != 0 ||
-		len(overrides.Cooldown.Include) > 0 || len(overrides.Cooldown.Exclude) > 0 {
+	if hasCooldownConfig(overrides.Cooldown) {
 		update.Cooldown = overrides.Cooldown
 	}
 }
@@ -723,12 +721,25 @@ func ensureStableGroupPrefixes(update *Update) {
 	update.Groups = newGroups
 }
 
+// hasCooldownConfig checks if a Cooldown struct has any configuration
+func hasCooldownConfig(cooldown Cooldown) bool {
+	return cooldown.SemverMajorDays != 0 || cooldown.SemverMinorDays != 0 || 
+		cooldown.SemverPatchDays != 0 || cooldown.DefaultDays != 0 ||
+		len(cooldown.Include) > 0 || len(cooldown.Exclude) > 0
+}
+
 // addCooldownToExistingUpdate adds cooldown configuration to existing updates that don't have it
 func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 	configCooldown := toolConfig.UpdateDefaults.Cooldown
+	
+	// Skip if no cooldown configured
+	if !hasCooldownConfig(configCooldown) {
+		return false
+	}
+	
 	modified := false
 
-	// Only add timing fields that are configured in the config and missing in the update
+	// Add missing timing fields
 	if configCooldown.SemverMajorDays != 0 && update.Cooldown.SemverMajorDays == 0 {
 		update.Cooldown.SemverMajorDays = configCooldown.SemverMajorDays
 		modified = true
@@ -746,23 +757,21 @@ func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 		modified = true
 	}
 
-	// Extend include/exclude lists with config values (merge, don't replace)
-	if len(configCooldown.Include) > 0 {
-		for _, configItem := range configCooldown.Include {
-			if !util.Contains(update.Cooldown.Include, configItem) {
-				update.Cooldown.Include = append(update.Cooldown.Include, configItem)
-				modified = true
-			}
-		}
-	}
-	if len(configCooldown.Exclude) > 0 {
-		for _, configItem := range configCooldown.Exclude {
-			if !util.Contains(update.Cooldown.Exclude, configItem) {
-				update.Cooldown.Exclude = append(update.Cooldown.Exclude, configItem)
-				modified = true
-			}
-		}
-	}
+	// Extend include/exclude lists (merge, don't replace)
+	modified = mergeStringLists(&update.Cooldown.Include, configCooldown.Include) || modified
+	modified = mergeStringLists(&update.Cooldown.Exclude, configCooldown.Exclude) || modified
 
+	return modified
+}
+
+// mergeStringLists adds items from source to target list if not already present
+func mergeStringLists(target *[]string, source []string) bool {
+	modified := false
+	for _, item := range source {
+		if !util.Contains(*target, item) {
+			*target = append(*target, item)
+			modified = true
+		}
+	}
 	return modified
 }

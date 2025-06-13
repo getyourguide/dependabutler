@@ -683,6 +683,13 @@ func TestCooldown(t *testing.T) {
 		t.Error("Missing DefaultDays should be added from config")
 	}
 	
+	// Test that empty config doesn't modify anything
+	emptyConfigUpdate := Update{Cooldown: Cooldown{SemverMajorDays: 5}}
+	emptyToolConfig := ToolConfig{}
+	if addCooldownToExistingUpdate(&emptyConfigUpdate, emptyToolConfig) {
+		t.Error("Should not modify anything when config has no cooldown")
+	}
+	
 	// Test include/exclude list merging
 	mergeUpdate := Update{Cooldown: Cooldown{
 		Exclude: []string{"@existing*"},
