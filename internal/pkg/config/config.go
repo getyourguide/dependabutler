@@ -36,13 +36,14 @@ func (config *ToolConfig) InitializePatterns() {
 
 // ToolConfig holds the tool's configuration defined in config.yml
 type ToolConfig struct {
-	UpdateDefaults        UpdateDefaults               `yaml:"update-defaults"`
-	UpdateOverrides       map[string]UpdateDefaults    `yaml:"update-overrides"`
-	Registries            map[string]DefaultRegistries `yaml:"registries"`
-	ManifestPatterns      map[string]string            `yaml:"manifest-patterns"`
-	ManifestIgnorePattern string                       `yaml:"manifest-ignore-pattern"`
-	PullRequestParameters PullRequestParameters        `yaml:"pull-request-parameters"`
-	StableGroupPrefixes   *bool                        `yaml:"stable-group-prefixes,omitempty"`
+	UpdateDefaults                UpdateDefaults               `yaml:"update-defaults"`
+	UpdateOverrides               map[string]UpdateDefaults    `yaml:"update-overrides"`
+	Registries                    map[string]DefaultRegistries `yaml:"registries"`
+	ManifestPatterns              map[string]string            `yaml:"manifest-patterns"`
+	ManifestIgnorePattern         string                       `yaml:"manifest-ignore-pattern"`
+	PullRequestParameters         PullRequestParameters        `yaml:"pull-request-parameters"`
+	StableGroupPrefixes           *bool                        `yaml:"stable-group-prefixes,omitempty"`
+	UpdateMissingCooldownSettings *bool                        `yaml:"update-missing-cooldown-settings,omitempty"`
 }
 
 // DefaultRegistries holds the default registries for new update definitions
@@ -412,7 +413,7 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		OpenPullRequestsLimit:         toolConfig.UpdateDefaults.OpenPullRequestsLimit,
 		RebaseStrategy:                toolConfig.UpdateDefaults.RebaseStrategy,
 		InsecureExternalCodeExecution: toolConfig.UpdateDefaults.InsecureExternalCodeExecution,
-		Cooldown:                      toolConfig.UpdateDefaults.Cooldown,
+		Cooldown:					   toolConfig.UpdateDefaults.Cooldown,
 	}
 	// apply override properties, if defined
 	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
@@ -713,6 +714,11 @@ func ensureStableGroupPrefixes(update *Update) {
 
 // Adds cooldown configuration to existing updates that don't have it
 func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
+	// Check if the flag is explicitly set to false
+	if toolConfig.UpdateMissingCooldownSettings != nil && !*toolConfig.UpdateMissingCooldownSettings {
+		return false
+	}
+	
 	configCooldown := toolConfig.UpdateDefaults.Cooldown
 	
 	if !hasCooldownConfig(configCooldown) {
@@ -722,10 +728,10 @@ func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 	modified := false
 
 	// Add missing timing fields
-	modified = addMissingTimingField(&update.Cooldown.SemverMajorDays, configCooldown.SemverMajorDays) || modified
-	modified = addMissingTimingField(&update.Cooldown.SemverMinorDays, configCooldown.SemverMinorDays) || modified
-	modified = addMissingTimingField(&update.Cooldown.SemverPatchDays, configCooldown.SemverPatchDays) || modified
-	modified = addMissingTimingField(&update.Cooldown.DefaultDays, configCooldown.DefaultDays) || modified
+	modified = addMissingNumberField(&update.Cooldown.SemverMajorDays, configCooldown.SemverMajorDays) || modified
+	modified = addMissingNumberField(&update.Cooldown.SemverMinorDays, configCooldown.SemverMinorDays) || modified
+	modified = addMissingNumberField(&update.Cooldown.SemverPatchDays, configCooldown.SemverPatchDays) || modified
+	modified = addMissingNumberField(&update.Cooldown.DefaultDays, configCooldown.DefaultDays) || modified
 
 	// Extend include/exclude lists (merge, don't replace)
 	modified = mergeStringLists(&update.Cooldown.Include, configCooldown.Include) || modified
@@ -734,7 +740,7 @@ func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 	return modified
 }
 
-func addMissingTimingField(target *int, configValue int) bool {
+func addMissingNumberField(target *int, configValue int) bool {
 	if configValue != 0 && *target == 0 {
 		*target = configValue
 		return true
