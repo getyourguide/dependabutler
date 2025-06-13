@@ -404,9 +404,6 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 
 // createUpdateEntry creates a new update entry for a manifest file
 func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig) Update {
-	// Use cooldown configuration from config file
-	cooldown := toolConfig.UpdateDefaults.Cooldown
-
 	update := Update{
 		PackageEcosystem:              manifestType,
 		Directory:                     manifestPath,
@@ -415,7 +412,7 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		OpenPullRequestsLimit:         toolConfig.UpdateDefaults.OpenPullRequestsLimit,
 		RebaseStrategy:                toolConfig.UpdateDefaults.RebaseStrategy,
 		InsecureExternalCodeExecution: toolConfig.UpdateDefaults.InsecureExternalCodeExecution,
-		Cooldown:                      cooldown,
+		Cooldown:                      toolConfig.UpdateDefaults.Cooldown,
 	}
 	// apply override properties, if defined
 	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
