@@ -33,7 +33,7 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 | repo                | ³         |                     | name of the repository to scan                |
 | repoFile            | ³         |                     | file containing repositories, one per line    |
 | stable-group-prefixes | no      | true                | ensures group names have numeric prefixes (01_, 02_, etc.) |
-| update-missing-cooldown-settings | no | true          | when true, adds missing cooldown settings to existing updates; when false, only adds cooldown to new repos/sections |
+| update-missing-cooldown-settings | no | true          | update existing manifests adding default settings |
 
 ¹ mandatory for local mode  
 ² mandatory for remote mode  

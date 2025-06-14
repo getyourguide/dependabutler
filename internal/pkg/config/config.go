@@ -413,7 +413,7 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		OpenPullRequestsLimit:         toolConfig.UpdateDefaults.OpenPullRequestsLimit,
 		RebaseStrategy:                toolConfig.UpdateDefaults.RebaseStrategy,
 		InsecureExternalCodeExecution: toolConfig.UpdateDefaults.InsecureExternalCodeExecution,
-		Cooldown:					   toolConfig.UpdateDefaults.Cooldown,
+		Cooldown:                      toolConfig.UpdateDefaults.Cooldown,
 	}
 	// apply override properties, if defined
 	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
@@ -714,17 +714,16 @@ func ensureStableGroupPrefixes(update *Update) {
 
 // Adds cooldown configuration to existing updates that don't have it
 func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
-	// Check if the flag is explicitly set to false
-	if toolConfig.UpdateMissingCooldownSettings != nil && !*toolConfig.UpdateMissingCooldownSettings {
+	if toolConfig.UpdateMissingCooldownSettings == nil || !*toolConfig.UpdateMissingCooldownSettings {
 		return false
 	}
-	
+
 	configCooldown := toolConfig.UpdateDefaults.Cooldown
-	
+
 	if !hasCooldownConfig(configCooldown) {
 		return false
 	}
-	
+
 	modified := false
 
 	// Add missing timing fields
@@ -760,7 +759,7 @@ func mergeStringLists(target *[]string, source []string) bool {
 }
 
 func hasCooldownConfig(cooldown Cooldown) bool {
-	return cooldown.SemverMajorDays != 0 || cooldown.SemverMinorDays != 0 || 
+	return cooldown.SemverMajorDays != 0 || cooldown.SemverMinorDays != 0 ||
 		cooldown.SemverPatchDays != 0 || cooldown.DefaultDays != 0 ||
 		len(cooldown.Include) > 0 || len(cooldown.Exclude) > 0
 }
