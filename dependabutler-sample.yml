@@ -90,6 +90,7 @@ pull-request-parameters:
 # feature flags
 #
 stable-group-prefixes: true  # Ensures group names have numeric prefixes (01_, 02_, etc.)
+update-missing-cooldown-settings: false  # When true, adds missing cooldown settings to existing updates; when false, only adds cooldown to new repos/sections
 
 #
 # patterns for detecting manifest files

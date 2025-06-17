@@ -36,13 +36,14 @@ func (config *ToolConfig) InitializePatterns() {
 
 // ToolConfig holds the tool's configuration defined in config.yml
 type ToolConfig struct {
-	UpdateDefaults        UpdateDefaults               `yaml:"update-defaults"`
-	UpdateOverrides       map[string]UpdateDefaults    `yaml:"update-overrides"`
-	Registries            map[string]DefaultRegistries `yaml:"registries"`
-	ManifestPatterns      map[string]string            `yaml:"manifest-patterns"`
-	ManifestIgnorePattern string                       `yaml:"manifest-ignore-pattern"`
-	PullRequestParameters PullRequestParameters        `yaml:"pull-request-parameters"`
-	StableGroupPrefixes   *bool                        `yaml:"stable-group-prefixes,omitempty"`
+	UpdateDefaults                UpdateDefaults               `yaml:"update-defaults"`
+	UpdateOverrides               map[string]UpdateDefaults    `yaml:"update-overrides"`
+	Registries                    map[string]DefaultRegistries `yaml:"registries"`
+	ManifestPatterns              map[string]string            `yaml:"manifest-patterns"`
+	ManifestIgnorePattern         string                       `yaml:"manifest-ignore-pattern"`
+	PullRequestParameters         PullRequestParameters        `yaml:"pull-request-parameters"`
+	StableGroupPrefixes           *bool                        `yaml:"stable-group-prefixes,omitempty"`
+	UpdateMissingCooldownSettings *bool                        `yaml:"update-missing-cooldown-settings,omitempty"`
 }
 
 // DefaultRegistries holds the default registries for new update definitions
@@ -76,6 +77,7 @@ type UpdateDefaults struct {
 	OpenPullRequestsLimit         int           `yaml:"open-pull-requests-limit"`
 	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution"`
 	RebaseStrategy                string        `yaml:"rebase-strategy"`
+	Cooldown                      Cooldown      `yaml:"cooldown"`
 }
 
 // DependabotConfig holds the configuration defined in dependabot.yml
@@ -123,6 +125,7 @@ type Update struct {
 	TargetBranch       string   `yaml:"target-branch,omitempty"`
 	Vendor             bool     `yaml:"vendor,omitempty"`
 	VersioningStrategy string   `yaml:"versioning-strategy,omitempty"`
+	Cooldown           Cooldown `yaml:"cooldown,omitempty"`
 }
 
 // Group holds the config items of a group definition
@@ -158,6 +161,16 @@ type CommitMessage struct {
 	Prefix            string `yaml:"prefix,omitempty"`
 	PrefixDevelopment string `yaml:"prefix-development,omitempty"`
 	Include           string `yaml:"include,omitempty"`
+}
+
+// Cooldown holds the cooldown configuration for different semver update types
+type Cooldown struct {
+	SemverMajorDays int      `yaml:"semver-major-days,omitempty"`
+	SemverMinorDays int      `yaml:"semver-minor-days,omitempty"`
+	SemverPatchDays int      `yaml:"semver-patch-days,omitempty"`
+	DefaultDays     int      `yaml:"default-days,omitempty"`
+	Include         []string `yaml:"include,omitempty"`
+	Exclude         []string `yaml:"exclude,omitempty"`
 }
 
 // ChangeInfo holds the changes applied to a config.
@@ -400,6 +413,7 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		OpenPullRequestsLimit:         toolConfig.UpdateDefaults.OpenPullRequestsLimit,
 		RebaseStrategy:                toolConfig.UpdateDefaults.RebaseStrategy,
 		InsecureExternalCodeExecution: toolConfig.UpdateDefaults.InsecureExternalCodeExecution,
+		Cooldown:                      toolConfig.UpdateDefaults.Cooldown,
 	}
 	// apply override properties, if defined
 	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
@@ -517,7 +531,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	// Fix existing updates, if necessary
 	for i := range config.Updates {
 		update := &config.Updates[i]
-		if fixExistingUpdateConfig(update) {
+		if fixExistingUpdateConfig(update) || addCooldownToExistingUpdate(update, toolConfig) {
 			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
 		}
 	}
@@ -570,6 +584,9 @@ func applyOverrides(update *Update, overrides UpdateDefaults) {
 	}
 	if overrides.InsecureExternalCodeExecution != "" {
 		update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
+	}
+	if hasCooldownConfig(overrides.Cooldown) {
+		update.Cooldown = overrides.Cooldown
 	}
 }
 
@@ -693,4 +710,56 @@ func ensureStableGroupPrefixes(update *Update) {
 
 	// Replace the groups with the new prefixed map
 	update.Groups = newGroups
+}
+
+// Adds cooldown configuration to existing updates that don't have it
+func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
+	if toolConfig.UpdateMissingCooldownSettings == nil || !*toolConfig.UpdateMissingCooldownSettings {
+		return false
+	}
+
+	configCooldown := toolConfig.UpdateDefaults.Cooldown
+
+	if !hasCooldownConfig(configCooldown) {
+		return false
+	}
+
+	modified := false
+
+	// Add missing timing fields
+	modified = addMissingNumberField(&update.Cooldown.SemverMajorDays, configCooldown.SemverMajorDays) || modified
+	modified = addMissingNumberField(&update.Cooldown.SemverMinorDays, configCooldown.SemverMinorDays) || modified
+	modified = addMissingNumberField(&update.Cooldown.SemverPatchDays, configCooldown.SemverPatchDays) || modified
+	modified = addMissingNumberField(&update.Cooldown.DefaultDays, configCooldown.DefaultDays) || modified
+
+	// Extend include/exclude lists (merge, don't replace)
+	modified = mergeStringLists(&update.Cooldown.Include, configCooldown.Include) || modified
+	modified = mergeStringLists(&update.Cooldown.Exclude, configCooldown.Exclude) || modified
+
+	return modified
+}
+
+func addMissingNumberField(target *int, configValue int) bool {
+	if configValue != 0 && *target == 0 {
+		*target = configValue
+		return true
+	}
+	return false
+}
+
+func mergeStringLists(target *[]string, source []string) bool {
+	modified := false
+	for _, item := range source {
+		if !util.Contains(*target, item) {
+			*target = append(*target, item)
+			modified = true
+		}
+	}
+	return modified
+}
+
+func hasCooldownConfig(cooldown Cooldown) bool {
+	return cooldown.SemverMajorDays != 0 || cooldown.SemverMinorDays != 0 ||
+		cooldown.SemverPatchDays != 0 || cooldown.DefaultDays != 0 ||
+		len(cooldown.Include) > 0 || len(cooldown.Exclude) > 0
 }
