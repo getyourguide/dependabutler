@@ -628,3 +628,202 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 		})
 	}
 }
+
+// Test behavior when update-missing-cooldown-settings is false
+func TestCoolDownWithUpdateFlagFalse(t *testing.T) {
+
+	t.Run("Existing cooldown - no changes", func(t *testing.T) {
+		// dependabutler.yml config
+		toolConfig := ToolConfig{
+			UpdateMissingCooldownSettings: func() *bool { b := false; return &b }(),
+			UpdateDefaults: UpdateDefaults{
+				Cooldown: Cooldown{
+					SemverMajorDays: 21,
+					SemverMinorDays: 7,
+					SemverPatchDays: 3,
+					DefaultDays:     20,
+				},
+			},
+		}
+
+		// repo dependabot.yml
+		update := Update{
+			PackageEcosystem: "npm",
+			Directory:        "/",
+			Cooldown: Cooldown{
+				DefaultDays: 10,
+			},
+		}
+
+		addCooldownToExistingUpdate(&update, toolConfig)
+
+		expected := Cooldown{
+			DefaultDays: 10, // preserved existing value
+		}
+
+		if !reflect.DeepEqual(update.Cooldown, expected) {
+			t.Errorf("Expected cooldown %+v, got %+v", expected, update.Cooldown)
+		}
+	})
+
+	t.Run("flag nil - should act like false", func(t *testing.T) {
+		toolConfig := ToolConfig{
+			UpdateMissingCooldownSettings: nil,
+			UpdateDefaults: UpdateDefaults{
+				Cooldown: Cooldown{
+					DefaultDays: 10,
+				},
+			},
+		}
+
+		// repo dependabot.yml
+		update := Update{
+			PackageEcosystem: "npm",
+			Directory:        "/",
+			Cooldown: Cooldown{
+				SemverPatchDays: 3,
+			},
+		}
+
+		addCooldownToExistingUpdate(&update, toolConfig)
+
+		expected := Cooldown{
+			SemverPatchDays: 3,
+		}
+
+		if !reflect.DeepEqual(update.Cooldown, expected) {
+			t.Errorf("Expected cooldown %+v, got %+v", expected, update.Cooldown)
+		}
+	})
+
+	t.Run("No cooldown - no changes", func(t *testing.T) {
+		// dependabutler.yml config
+		toolConfig := ToolConfig{
+			UpdateMissingCooldownSettings: func() *bool { b := false; return &b }(),
+			UpdateDefaults: UpdateDefaults{
+				Cooldown: Cooldown{
+					SemverMajorDays: 21,
+					SemverMinorDays: 7,
+					SemverPatchDays: 3,
+					DefaultDays:     20,
+				},
+			},
+		}
+
+		// repo dependabot.yml with no cooldown
+		update := Update{
+			PackageEcosystem: "npm",
+			Directory:        "/",
+			Cooldown:         Cooldown{}, // empty cooldown
+		}
+
+		addCooldownToExistingUpdate(&update, toolConfig)
+
+		// Expected: no changes, cooldown remains empty
+		expected := Cooldown{}
+
+		if !reflect.DeepEqual(update.Cooldown, expected) {
+			t.Errorf("Expected cooldown %+v, got %+v", expected, update.Cooldown)
+		}
+	})
+
+	// New manifests should still add cooldown (flag only affects existing entries)
+	t.Run("New manifest gets cooldown", func(t *testing.T) {
+		// dependabutler.yml config
+		toolConfig := ToolConfig{
+			UpdateMissingCooldownSettings: func() *bool { b := false; return &b }(),
+			UpdateDefaults: UpdateDefaults{
+				Cooldown: Cooldown{
+					SemverMajorDays: 21,
+					SemverMinorDays: 7,
+					SemverPatchDays: 3,
+					DefaultDays:     20,
+				},
+			},
+		}
+
+		update := createUpdateEntry("npm", "/", toolConfig)
+
+		expected := Cooldown{
+			SemverMajorDays: 21,
+			SemverMinorDays: 7,
+			SemverPatchDays: 3,
+			DefaultDays:     20,
+		}
+
+		if !reflect.DeepEqual(update.Cooldown, expected) {
+			t.Errorf("Expected cooldown %+v, got %+v", expected, update.Cooldown)
+		}
+	})
+}
+
+// Test behavior when update-missing-cooldown-settings is true
+func TestCoolDownWithUpdateFlagTrue(t *testing.T) {
+
+	t.Run("Partial cooldown gets missing values", func(t *testing.T) {
+		// dependabutler.yml config
+		toolConfig := ToolConfig{
+			UpdateMissingCooldownSettings: func() *bool { b := true; return &b }(),
+			UpdateDefaults: UpdateDefaults{
+				Cooldown: Cooldown{
+					DefaultDays: 10,
+				},
+			},
+		}
+
+		// repo dependabot.yml
+		update := Update{
+			PackageEcosystem: "npm",
+			Directory:        "/",
+			Cooldown: Cooldown{
+				SemverPatchDays: 3,
+			},
+		}
+
+		addCooldownToExistingUpdate(&update, toolConfig)
+
+		expected := Cooldown{
+			SemverPatchDays: 3,  // preserved existing value
+			DefaultDays:     10, // added from config
+		}
+
+		if !reflect.DeepEqual(update.Cooldown, expected) {
+			t.Errorf("Expected cooldown %+v, got %+v", expected, update.Cooldown)
+		}
+	})
+
+	t.Run("No cooldown gets all values", func(t *testing.T) {
+		// dependabutler.yml config
+		toolConfig := ToolConfig{
+			UpdateMissingCooldownSettings: func() *bool { b := true; return &b }(),
+			UpdateDefaults: UpdateDefaults{
+				Cooldown: Cooldown{
+					SemverMajorDays: 21,
+					SemverMinorDays: 7,
+					SemverPatchDays: 3,
+					DefaultDays:     20,
+				},
+			},
+		}
+
+		// repo dependabot.yml
+		update := Update{
+			PackageEcosystem: "npm",
+			Directory:        "/",
+			Cooldown:         Cooldown{}, // empty cooldown
+		}
+
+		addCooldownToExistingUpdate(&update, toolConfig)
+
+		expected := Cooldown{
+			SemverMajorDays: 21, // added from config
+			SemverMinorDays: 7,  // added from config
+			SemverPatchDays: 3,  // added from config
+			DefaultDays:     20, // added from config
+		}
+
+		if !reflect.DeepEqual(update.Cooldown, expected) {
+			t.Errorf("Expected cooldown %+v, got %+v", expected, update.Cooldown)
+		}
+	})
+}
