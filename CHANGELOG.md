@@ -83,3 +83,8 @@ Initial version.
 ## v0.7.3
 
 - Fixed a bug related to the `directories` property.
+
+## v0.8.0
+
+- Added support for the `cooldown` property.
+- Added configuration flag `update-missing-cooldown-settings` to update existing manifests with default settings for the `cooldown` property.
