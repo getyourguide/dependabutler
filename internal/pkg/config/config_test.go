@@ -631,7 +631,6 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 
 // Test behavior when update-missing-cooldown-settings is false
 func TestCoolDownWithUpdateFlagFalse(t *testing.T) {
-
 	t.Run("Existing cooldown - no changes", func(t *testing.T) {
 		// dependabutler.yml config
 		toolConfig := ToolConfig{
@@ -759,7 +758,6 @@ func TestCoolDownWithUpdateFlagFalse(t *testing.T) {
 
 // Test behavior when update-missing-cooldown-settings is true
 func TestCoolDownWithUpdateFlagTrue(t *testing.T) {
-
 	t.Run("Partial cooldown gets missing values", func(t *testing.T) {
 		// dependabutler.yml config
 		toolConfig := ToolConfig{
