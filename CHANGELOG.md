@@ -88,3 +88,7 @@ Initial version.
 
 - Added support for the `cooldown` property.
 - Added configuration flag `update-missing-cooldown-settings` to update existing manifests with default settings for the `cooldown` property.
+
+## v0.8.1
+
+- Fixed `update-missing-cooldown-settings` to also take into account potential override settings for the `cooldown` property.
