@@ -718,7 +718,14 @@ func addCooldownToExistingUpdate(update *Update, toolConfig ToolConfig) bool {
 		return false
 	}
 
+	// get cooldown default settings
 	configCooldown := toolConfig.UpdateDefaults.Cooldown
+	// get override settings, if defined
+	if overrides, hasOverrides := toolConfig.UpdateOverrides[update.PackageEcosystem]; hasOverrides {
+		if hasCooldownConfig(overrides.Cooldown) {
+			configCooldown = overrides.Cooldown
+		}
+	}
 
 	if !hasCooldownConfig(configCooldown) {
 		return false
