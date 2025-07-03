@@ -825,3 +825,92 @@ func TestCoolDownWithUpdateFlagTrue(t *testing.T) {
 		}
 	})
 }
+
+// Test cooldown exclusions with update-overrides
+func TestUpdateOverridesCooldownExclusions(t *testing.T) {
+	t.Run("Update overrides should merge cooldown settings", func(t *testing.T) {
+		// Setup tool config with global cooldown settings and package-specific exclusions
+		toolConfig := ToolConfig{
+			UpdateDefaults: UpdateDefaults{
+				Cooldown: Cooldown{
+					SemverMajorDays: 21,
+					SemverMinorDays: 7,
+					SemverPatchDays: 3,
+					DefaultDays:     10,
+				},
+			},
+			UpdateOverrides: map[string]UpdateDefaults{
+				"npm": {
+					Cooldown: Cooldown{
+						Exclude: []string{"@getyourguide*"},
+					},
+				},
+				"docker": {
+					Cooldown: Cooldown{
+						Exclude: []string{"base/*"},
+					},
+				},
+			},
+		}
+
+		// Test manifests
+		manifests := map[string]string{
+			"package.json":  "npm",
+			"Dockerfile":    "docker",
+		}
+
+		// Create initial empty config
+		config := &DependabotConfig{
+			Version:    2,
+			Updates:    []Update{},
+			Registries: map[string]Registry{},
+		}
+
+		// Update config with manifests
+		_ = config.UpdateConfig(manifests, toolConfig, nil, LoadFileContentParameters{}, nil, CheckDirectoryExistsParameters{})
+
+		// Verify npm update has both timing and exclusions
+		var npmUpdate *Update
+		var dockerUpdate *Update
+		for i := range config.Updates {
+			if config.Updates[i].PackageEcosystem == "npm" {
+				npmUpdate = &config.Updates[i]
+			} else if config.Updates[i].PackageEcosystem == "docker" {
+				dockerUpdate = &config.Updates[i]
+			}
+		}
+
+		if npmUpdate == nil {
+			t.Fatal("Expected npm update to be created")
+		}
+		if dockerUpdate == nil {
+			t.Fatal("Expected docker update to be created")
+		}
+
+		// Verify npm update has both global cooldown timing and npm-specific exclusions
+		expectedNpmCooldown := Cooldown{
+			SemverMajorDays: 21,
+			SemverMinorDays: 7,
+			SemverPatchDays: 3,
+			DefaultDays:     10,
+			Exclude:         []string{"@getyourguide*"},
+		}
+
+		if !reflect.DeepEqual(npmUpdate.Cooldown, expectedNpmCooldown) {
+			t.Errorf("Expected npm cooldown %+v, got %+v", expectedNpmCooldown, npmUpdate.Cooldown)
+		}
+
+		// Verify docker update has both global cooldown timing and docker-specific exclusions
+		expectedDockerCooldown := Cooldown{
+			SemverMajorDays: 21,
+			SemverMinorDays: 7,
+			SemverPatchDays: 3,
+			DefaultDays:     10,
+			Exclude:         []string{"base/*"},
+		}
+
+		if !reflect.DeepEqual(dockerUpdate.Cooldown, expectedDockerCooldown) {
+			t.Errorf("Expected docker cooldown %+v, got %+v", expectedDockerCooldown, dockerUpdate.Cooldown)
+		}
+	})
+}

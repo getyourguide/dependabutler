@@ -586,7 +586,7 @@ func applyOverrides(update *Update, overrides UpdateDefaults) {
 		update.InsecureExternalCodeExecution = overrides.InsecureExternalCodeExecution
 	}
 	if hasCooldownConfig(overrides.Cooldown) {
-		update.Cooldown = overrides.Cooldown
+		mergeCooldownConfig(&update.Cooldown, overrides.Cooldown)
 	}
 }
 
@@ -769,4 +769,29 @@ func hasCooldownConfig(cooldown Cooldown) bool {
 	return cooldown.SemverMajorDays != 0 || cooldown.SemverMinorDays != 0 ||
 		cooldown.SemverPatchDays != 0 || cooldown.DefaultDays != 0 ||
 		len(cooldown.Include) > 0 || len(cooldown.Exclude) > 0
+}
+
+// mergeCooldownConfig merges override cooldown settings into the base cooldown config
+func mergeCooldownConfig(base *Cooldown, overrides Cooldown) {
+	// Override timing fields only if they are set in overrides
+	if overrides.SemverMajorDays != 0 {
+		base.SemverMajorDays = overrides.SemverMajorDays
+	}
+	if overrides.SemverMinorDays != 0 {
+		base.SemverMinorDays = overrides.SemverMinorDays
+	}
+	if overrides.SemverPatchDays != 0 {
+		base.SemverPatchDays = overrides.SemverPatchDays
+	}
+	if overrides.DefaultDays != 0 {
+		base.DefaultDays = overrides.DefaultDays
+	}
+	
+	// Replace include/exclude lists if they are set in overrides
+	if len(overrides.Include) > 0 {
+		base.Include = overrides.Include
+	}
+	if len(overrides.Exclude) > 0 {
+		base.Exclude = overrides.Exclude
+	}
 }
