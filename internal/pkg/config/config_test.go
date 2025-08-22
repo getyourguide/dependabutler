@@ -106,7 +106,6 @@ registries:
 updates:
 - package-ecosystem: docker
   directory: "/"
-  registry: "docker-registry"
 - package-ecosystem: npm
   directory: "/npm/stuff/here"
 - package-ecosystem: npm
@@ -824,4 +823,120 @@ func TestCoolDownWithUpdateFlagTrue(t *testing.T) {
 			t.Errorf("Expected cooldown %+v, got %+v", expected, update.Cooldown)
 		}
 	})
+}
+
+func TestRemoveDeprecatedReviewers(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   DependabotConfig
+		expected DependabotConfig
+	}{
+		{
+			name: "No reviewers to remove",
+			config: DependabotConfig{
+				Version: 2,
+				Updates: []Update{
+					{PackageEcosystem: "npm", Directory: "/"},
+					{PackageEcosystem: "docker", Directory: "/"},
+				},
+			},
+			expected: DependabotConfig{
+				Version: 2,
+				Updates: []Update{
+					{PackageEcosystem: "npm", Directory: "/"},
+					{PackageEcosystem: "docker", Directory: "/"},
+				},
+			},
+		},
+		{
+			name: "Remove reviewers from all updates",
+			config: DependabotConfig{
+				Version: 2,
+				Updates: []Update{
+					{
+						PackageEcosystem: "npm",
+						Directory:        "/",
+						Reviewers:        []string{"user1", "user2"},
+					},
+					{
+						PackageEcosystem: "docker",
+						Directory:        "/",
+						Reviewers:        []string{"user3"},
+					},
+				},
+			},
+			expected: DependabotConfig{
+				Version: 2,
+				Updates: []Update{
+					{
+						PackageEcosystem: "npm",
+						Directory:        "/",
+						Reviewers:        nil,
+					},
+					{
+						PackageEcosystem: "docker",
+						Directory:        "/",
+						Reviewers:        nil,
+					},
+				},
+			},
+		},
+		{
+			name: "Mixed updates with and without reviewers",
+			config: DependabotConfig{
+				Version: 2,
+				Updates: []Update{
+					{
+						PackageEcosystem: "npm",
+						Directory:        "/",
+						Reviewers:        []string{"user1"},
+					},
+					{
+						PackageEcosystem: "docker",
+						Directory:        "/",
+						Reviewers:        nil,
+					},
+					{
+						PackageEcosystem: "pip",
+						Directory:        "/",
+						Reviewers:        []string{"user2", "user3"},
+					},
+				},
+			},
+			expected: DependabotConfig{
+				Version: 2,
+				Updates: []Update{
+					{
+						PackageEcosystem: "npm",
+						Directory:        "/",
+						Reviewers:        nil,
+					},
+					{
+						PackageEcosystem: "docker",
+						Directory:        "/",
+						Reviewers:        nil,
+					},
+					{
+						PackageEcosystem: "pip",
+						Directory:        "/",
+						Reviewers:        nil,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Make a copy of the config to avoid modifying the test case
+			config := tt.config
+
+			removeDeprecatedReviewers(&config)
+
+			// Check if the config matches the expected values
+			if !reflect.DeepEqual(config, tt.expected) {
+				t.Errorf("removeDeprecatedReviewers() failed\nExpected: %+v\nGot:      %+v", tt.expected, config)
+			}
+		})
+	}
 }

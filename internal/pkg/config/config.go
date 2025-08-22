@@ -550,6 +550,9 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		}
 	}
 
+	// Remove deprecated reviewers field
+	removeDeprecatedReviewers(config)
+
 	// Check if there are unused registries to be removed
 	for name, registry := range config.Registries {
 		found := false
@@ -595,6 +598,21 @@ func fixNewUpdateConfig(update *Update, manifestType string) {
 	// remove "insecure-external-code-execution" if it is not allowed
 	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
 		update.InsecureExternalCodeExecution = ""
+	}
+	
+	// Warn about deprecated reviewers field
+	if len(update.Reviewers) > 0 {
+		log.Printf("WARNING: The 'reviewers' field is deprecated and will be removed by GitHub in May 2025. Use a CODEOWNERS file instead.")
+	}
+}
+
+// removeDeprecatedReviewers removes the deprecated reviewers field from all updates
+func removeDeprecatedReviewers(config *DependabotConfig) {
+	for i := range config.Updates {
+		if len(config.Updates[i].Reviewers) > 0 {
+			log.Printf("INFO: Removing deprecated 'reviewers' field from update %s", config.Updates[i].PackageEcosystem)
+			config.Updates[i].Reviewers = nil
+		}
 	}
 }
 

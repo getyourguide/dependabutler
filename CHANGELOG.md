@@ -92,3 +92,7 @@ Initial version.
 ## v0.8.1
 
 - Fixed `update-missing-cooldown-settings` to also take into account potential override settings for the `cooldown` property.
+
+## v0.8.2
+
+- Added deprecation support for the `reviewers` field in `dependabot.yml` (will be removed by GitHub in May 2025)
