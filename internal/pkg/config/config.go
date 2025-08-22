@@ -599,7 +599,7 @@ func fixNewUpdateConfig(update *Update, manifestType string) {
 	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
 		update.InsecureExternalCodeExecution = ""
 	}
-	
+
 	// Warn about deprecated reviewers field
 	if len(update.Reviewers) > 0 {
 		log.Printf("WARNING: The 'reviewers' field is deprecated and will be removed by GitHub in May 2025. Use a CODEOWNERS file instead.")
