@@ -825,117 +825,70 @@ func TestCoolDownWithUpdateFlagTrue(t *testing.T) {
 	})
 }
 
-func TestRemoveDeprecatedReviewers(t *testing.T) {
+func TestFixExistingUpdateConfigWithReviewers(t *testing.T) {
 	tests := []struct {
 		name     string
-		config   DependabotConfig
-		expected DependabotConfig
+		update   Update
+		expected Update
+		modified bool
 	}{
 		{
 			name: "No reviewers to remove",
-			config: DependabotConfig{
-				Version: 2,
-				Updates: []Update{
-					{PackageEcosystem: "npm", Directory: "/"},
-					{PackageEcosystem: "docker", Directory: "/"},
-				},
+			update: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
 			},
-			expected: DependabotConfig{
-				Version: 2,
-				Updates: []Update{
-					{PackageEcosystem: "npm", Directory: "/"},
-					{PackageEcosystem: "docker", Directory: "/"},
-				},
+			expected: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
 			},
+			modified: false,
 		},
 		{
-			name: "Remove reviewers from all updates",
-			config: DependabotConfig{
-				Version: 2,
-				Updates: []Update{
-					{
-						PackageEcosystem: "npm",
-						Directory:        "/",
-						Reviewers:        []string{"user1", "user2"},
-					},
-					{
-						PackageEcosystem: "docker",
-						Directory:        "/",
-						Reviewers:        []string{"user3"},
-					},
-				},
+			name: "Remove reviewers from update",
+			update: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+				Reviewers:        []string{"user1", "user2"},
 			},
-			expected: DependabotConfig{
-				Version: 2,
-				Updates: []Update{
-					{
-						PackageEcosystem: "npm",
-						Directory:        "/",
-						Reviewers:        nil,
-					},
-					{
-						PackageEcosystem: "docker",
-						Directory:        "/",
-						Reviewers:        nil,
-					},
-				},
+			expected: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+				Reviewers:        nil,
 			},
+			modified: true,
 		},
 		{
-			name: "Mixed updates with and without reviewers",
-			config: DependabotConfig{
-				Version: 2,
-				Updates: []Update{
-					{
-						PackageEcosystem: "npm",
-						Directory:        "/",
-						Reviewers:        []string{"user1"},
-					},
-					{
-						PackageEcosystem: "docker",
-						Directory:        "/",
-						Reviewers:        nil,
-					},
-					{
-						PackageEcosystem: "pip",
-						Directory:        "/",
-						Reviewers:        []string{"user2", "user3"},
-					},
-				},
+			name: "Fix empty directory and remove reviewers",
+			update: Update{
+				PackageEcosystem: "docker",
+				Directory:        "",
+				Reviewers:        []string{"user3"},
 			},
-			expected: DependabotConfig{
-				Version: 2,
-				Updates: []Update{
-					{
-						PackageEcosystem: "npm",
-						Directory:        "/",
-						Reviewers:        nil,
-					},
-					{
-						PackageEcosystem: "docker",
-						Directory:        "/",
-						Reviewers:        nil,
-					},
-					{
-						PackageEcosystem: "pip",
-						Directory:        "/",
-						Reviewers:        nil,
-					},
-				},
+			expected: Update{
+				PackageEcosystem: "docker",
+				Directory:        "/",
+				Reviewers:        nil,
 			},
+			modified: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Make a copy of the config to avoid modifying the test case
-			config := tt.config
+			// Make a copy of the update to avoid modifying the test case
+			update := tt.update
 
-			removeDeprecatedReviewers(&config)
+			modified := fixExistingUpdateConfig(&update)
 
-			// Check if the config matches the expected values
-			if !reflect.DeepEqual(config, tt.expected) {
-				t.Errorf("removeDeprecatedReviewers() failed\nExpected: %+v\nGot:      %+v", tt.expected, config)
+			// Check if the update matches the expected values
+			if !reflect.DeepEqual(update, tt.expected) {
+				t.Errorf("fixExistingUpdateConfig() failed\nExpected: %+v\nGot:      %+v", tt.expected, update)
+			}
+
+			// Check if the modified flag is correct
+			if modified != tt.modified {
+				t.Errorf("fixExistingUpdateConfig() modified flag failed\nExpected: %t\nGot:      %t", tt.modified, modified)
 			}
 		})
 	}

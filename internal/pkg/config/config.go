@@ -550,9 +550,6 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		}
 	}
 
-	// Remove deprecated reviewers field
-	removeDeprecatedReviewers(config)
-
 	// Check if there are unused registries to be removed
 	for name, registry := range config.Registries {
 		found := false
@@ -606,16 +603,6 @@ func fixNewUpdateConfig(update *Update, manifestType string) {
 	}
 }
 
-// removeDeprecatedReviewers removes the deprecated reviewers field from all updates
-func removeDeprecatedReviewers(config *DependabotConfig) {
-	for i := range config.Updates {
-		if len(config.Updates[i].Reviewers) > 0 {
-			log.Printf("INFO: Removing deprecated 'reviewers' field from update %s", config.Updates[i].PackageEcosystem)
-			config.Updates[i].Reviewers = nil
-		}
-	}
-}
-
 // isPathCovered returns if a manifest file is covered within a dependabot.yml config
 // special case for Dockerfiles, every subdirectory needs to be listed individually
 func isPathCovered(manifestPath string, manifestType string, directory string, directories []string) bool {
@@ -652,16 +639,26 @@ func hasDirectorySet(update *Update) bool {
 	return false
 }
 
-// fixNewUpdateConfig fixes the config for an existing Update, if necessary
+// fixExistingUpdateConfig fixes the config for an existing Update, if necessary
 func fixExistingUpdateConfig(update *Update) bool {
+	modified := false
+
 	// change path "" to "/"
 	if !hasDirectorySet(update) {
 		log.Printf("INFO  fixed empty directory in config for %v", update.PackageEcosystem)
 		update.Directory = "/"
 		update.Directories = nil
-		return true
+		modified = true
 	}
-	return false
+
+	// Remove deprecated reviewers field
+	if len(update.Reviewers) > 0 {
+		log.Printf("INFO: Removing deprecated 'reviewers' field from update %s", update.PackageEcosystem)
+		update.Reviewers = nil
+		modified = true
+	}
+
+	return modified
 }
 
 // ensureStableGroupPrefixes ensures all group names have a unique numeric prefix (01_, 02_, 03_, etc.)
