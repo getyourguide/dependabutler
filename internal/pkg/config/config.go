@@ -596,6 +596,11 @@ func fixNewUpdateConfig(update *Update, manifestType string) {
 	if update.InsecureExternalCodeExecution != "" && manifestType != "bundler" && manifestType != "mix" && manifestType != "pip" {
 		update.InsecureExternalCodeExecution = ""
 	}
+
+	// Warn about deprecated reviewers field
+	if len(update.Reviewers) > 0 {
+		log.Printf("WARNING: The 'reviewers' field is deprecated and will be removed by GitHub in May 2025. Use a CODEOWNERS file instead.")
+	}
 }
 
 // isPathCovered returns if a manifest file is covered within a dependabot.yml config
@@ -634,16 +639,26 @@ func hasDirectorySet(update *Update) bool {
 	return false
 }
 
-// fixNewUpdateConfig fixes the config for an existing Update, if necessary
+// fixExistingUpdateConfig fixes the config for an existing Update, if necessary
 func fixExistingUpdateConfig(update *Update) bool {
+	modified := false
+
 	// change path "" to "/"
 	if !hasDirectorySet(update) {
 		log.Printf("INFO  fixed empty directory in config for %v", update.PackageEcosystem)
 		update.Directory = "/"
 		update.Directories = nil
-		return true
+		modified = true
 	}
-	return false
+
+	// Remove deprecated reviewers field
+	if len(update.Reviewers) > 0 {
+		log.Printf("INFO: Removing deprecated 'reviewers' field from update %s", update.PackageEcosystem)
+		update.Reviewers = nil
+		modified = true
+	}
+
+	return modified
 }
 
 // ensureStableGroupPrefixes ensures all group names have a unique numeric prefix (01_, 02_, 03_, etc.)

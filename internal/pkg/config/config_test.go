@@ -106,7 +106,6 @@ registries:
 updates:
 - package-ecosystem: docker
   directory: "/"
-  registry: "docker-registry"
 - package-ecosystem: npm
   directory: "/npm/stuff/here"
 - package-ecosystem: npm
@@ -824,4 +823,73 @@ func TestCoolDownWithUpdateFlagTrue(t *testing.T) {
 			t.Errorf("Expected cooldown %+v, got %+v", expected, update.Cooldown)
 		}
 	})
+}
+
+func TestFixExistingUpdateConfigWithReviewers(t *testing.T) {
+	tests := []struct {
+		name     string
+		update   Update
+		expected Update
+		modified bool
+	}{
+		{
+			name: "No reviewers to remove",
+			update: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+			},
+			expected: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+			},
+			modified: false,
+		},
+		{
+			name: "Remove reviewers from update",
+			update: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+				Reviewers:        []string{"user1", "user2"},
+			},
+			expected: Update{
+				PackageEcosystem: "npm",
+				Directory:        "/",
+				Reviewers:        nil,
+			},
+			modified: true,
+		},
+		{
+			name: "Fix empty directory and remove reviewers",
+			update: Update{
+				PackageEcosystem: "docker",
+				Directory:        "",
+				Reviewers:        []string{"user3"},
+			},
+			expected: Update{
+				PackageEcosystem: "docker",
+				Directory:        "/",
+				Reviewers:        nil,
+			},
+			modified: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Make a copy of the update to avoid modifying the test case
+			update := tt.update
+
+			modified := fixExistingUpdateConfig(&update)
+
+			// Check if the update matches the expected values
+			if !reflect.DeepEqual(update, tt.expected) {
+				t.Errorf("fixExistingUpdateConfig() failed\nExpected: %+v\nGot:      %+v", tt.expected, update)
+			}
+
+			// Check if the modified flag is correct
+			if modified != tt.modified {
+				t.Errorf("fixExistingUpdateConfig() modified flag failed\nExpected: %t\nGot:      %t", tt.modified, modified)
+			}
+		})
+	}
 }

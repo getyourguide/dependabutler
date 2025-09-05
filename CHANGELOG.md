@@ -95,4 +95,4 @@ Initial version.
 
 ## v0.8.2
 
-- Add deprecation support for `reviewers` field.
+- Added deprecation support for the `reviewers` field in `dependabot.yml` (will be removed by GitHub in May 2025)
