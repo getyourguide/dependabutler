@@ -92,3 +92,7 @@ Initial version.
 ## v0.8.1
 
 - Fixed `update-missing-cooldown-settings` to also take into account potential override settings for the `cooldown` property.
+
+## v0.8.2
+
+- Add deprecation support for `reviewers` field.
