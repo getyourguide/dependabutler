@@ -74,7 +74,7 @@ type DefaultRegistry struct {
 type UpdateDefaults struct {
 	Schedule                      Schedule      `yaml:"schedule"`
 	CommitMessage                 CommitMessage `yaml:"commit-message"`
-	OpenPullRequestsLimit         int           `yaml:"open-pull-requests-limit"`
+	OpenPullRequestsLimit         *int          `yaml:"open-pull-requests-limit,omitempty"`
 	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution"`
 	RebaseStrategy                string        `yaml:"rebase-strategy"`
 	Cooldown                      Cooldown      `yaml:"cooldown"`
@@ -109,7 +109,7 @@ type Update struct {
 	Schedule                      Schedule         `yaml:"schedule,omitempty"`
 	Registries                    []string         `yaml:"registries,omitempty"`
 	CommitMessage                 CommitMessage    `yaml:"commit-message,omitempty"`
-	OpenPullRequestsLimit         int              `yaml:"open-pull-requests-limit,omitempty"`
+	OpenPullRequestsLimit         *int             `yaml:"open-pull-requests-limit,omitempty"`
 	Assignees                     []string         `yaml:"assignees,omitempty"`
 	Allow                         []Allow          `yaml:"allow,omitempty"`
 	Ignore                        []Ignore         `yaml:"ignore,omitempty"`
@@ -576,7 +576,7 @@ func applyOverrides(update *Update, overrides UpdateDefaults) {
 	if overrides.CommitMessage != (CommitMessage{}) {
 		update.CommitMessage = overrides.CommitMessage
 	}
-	if overrides.OpenPullRequestsLimit != 0 {
+	if overrides.OpenPullRequestsLimit != nil {
 		update.OpenPullRequestsLimit = overrides.OpenPullRequestsLimit
 	}
 	if overrides.RebaseStrategy != "" {

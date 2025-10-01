@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/getyourguide/dependabutler/internal/pkg/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -52,7 +53,7 @@ registries:
 `,
 			&ToolConfig{
 				UpdateDefaults: UpdateDefaults{
-					OpenPullRequestsLimit:         10,
+					OpenPullRequestsLimit:         util.Ptr(10),
 					InsecureExternalCodeExecution: "allow",
 					Schedule: Schedule{
 						Interval: "daily",
@@ -276,7 +277,7 @@ func TestAddManifest(t *testing.T) {
 				Time:     "18:15",
 				Timezone: "Europe/Berlin",
 			},
-			OpenPullRequestsLimit: 9,
+			OpenPullRequestsLimit: util.Ptr(9),
 		},
 		UpdateOverrides: map[string]UpdateDefaults{
 			"docker": {
