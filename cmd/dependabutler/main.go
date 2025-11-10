@@ -97,7 +97,6 @@ func processRemoteRepo(toolConfig config.ToolConfig, execute bool, org string, r
 	gitHubClient := getGitHubClient()
 	gitHubRepo, err := githubapi.GetRepository(gitHubClient, org, repo)
 	if err != nil {
-		log.Printf("ERROR Could not receive repo %v: %v", repo, err)
 		return false
 	}
 	if *gitHubRepo.Archived {
