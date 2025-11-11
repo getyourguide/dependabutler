@@ -200,29 +200,29 @@ func main() {
 	// initialize / precompile the patterns
 	toolConfig.InitializePatterns()
 
-	// track overall success
-	allSucceeded := true
+	// track number of failed repositories
+	failureCount := 1
 	// process
 	if mode == "local" {
 		if !processLocalRepo(*toolConfig, execute, dir) {
-			allSucceeded = false
+			failureCount++
 		}
 	} else if mode == "remote" {
 		if repo != "" {
 			if !processRemoteRepo(*toolConfig, execute, org, repo) {
-				allSucceeded = false
+				failureCount++
 			}
 		} else if repoFile != "" {
 			for _, repo := range util.ReadLinesFromFile(repoFile) {
 				if !processRemoteRepo(*toolConfig, execute, org, repo) {
-					allSucceeded = false
+					failureCount++
 				}
 			}
 		}
 	}
 	// Exit with error code if any processing failed
-	if !allSucceeded {
-		log.Printf("ERROR Some repositories failed to process")
+	if failureCount > 0 {
+		log.Printf("ERROR %d repositories could not be processed successfully.", failureCount)
 		os.Exit(1)
 	}
 }
