@@ -201,7 +201,7 @@ func main() {
 	toolConfig.InitializePatterns()
 
 	// track number of failed repositories
-	failureCount := 1
+	failureCount := 0
 	// process
 	if mode == "local" {
 		if !processLocalRepo(*toolConfig, execute, dir) {
