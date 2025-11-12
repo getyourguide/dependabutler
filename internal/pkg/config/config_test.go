@@ -80,6 +80,37 @@ registries:
 				},
 			},
 		},
+		{
+			`
+update-defaults:
+  schedule:
+    interval: daily
+  open-pull-requests-limit: 0
+`,
+			&ToolConfig{
+				UpdateDefaults: UpdateDefaults{
+					OpenPullRequestsLimit: util.Ptr(0),
+					Schedule: Schedule{
+						Interval: "daily",
+					},
+				},
+			},
+		},
+		{
+			`
+update-defaults:
+  schedule:
+    interval: daily
+`,
+			&ToolConfig{
+				UpdateDefaults: UpdateDefaults{
+					OpenPullRequestsLimit: nil,
+					Schedule: Schedule{
+						Interval: "daily",
+					},
+				},
+			},
+		},
 	} {
 		got, err := ParseToolConfig([]byte(tt.configString))
 		if err != nil {
