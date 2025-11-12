@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/getyourguide/dependabutler/internal/pkg/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -52,7 +53,7 @@ registries:
 `,
 			&ToolConfig{
 				UpdateDefaults: UpdateDefaults{
-					OpenPullRequestsLimit:         10,
+					OpenPullRequestsLimit:         util.Ptr(10),
 					InsecureExternalCodeExecution: "allow",
 					Schedule: Schedule{
 						Interval: "daily",
@@ -75,6 +76,37 @@ registries:
 					"docker": map[string]DefaultRegistry{
 						"docker-1": {Type: "docker-registry-1", URL: "https://docker.bar.foo", Username: "dockeruser", Password: "dockerpass"},
 						"docker-2": {Type: "docker-registry-2", URL: "https://docker.foo.bar", Username: "dockeruser2", Password: "dockerpass2", URLMatchRequired: true},
+					},
+				},
+			},
+		},
+		{
+			`
+update-defaults:
+  schedule:
+    interval: daily
+  open-pull-requests-limit: 0
+`,
+			&ToolConfig{
+				UpdateDefaults: UpdateDefaults{
+					OpenPullRequestsLimit: util.Ptr(0),
+					Schedule: Schedule{
+						Interval: "daily",
+					},
+				},
+			},
+		},
+		{
+			`
+update-defaults:
+  schedule:
+    interval: daily
+`,
+			&ToolConfig{
+				UpdateDefaults: UpdateDefaults{
+					OpenPullRequestsLimit: nil,
+					Schedule: Schedule{
+						Interval: "daily",
 					},
 				},
 			},
@@ -275,7 +307,7 @@ func TestAddManifest(t *testing.T) {
 				Time:     "18:15",
 				Timezone: "Europe/Berlin",
 			},
-			OpenPullRequestsLimit: 9,
+			OpenPullRequestsLimit: util.Ptr(9),
 		},
 		UpdateOverrides: map[string]UpdateDefaults{
 			"docker": {
