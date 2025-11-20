@@ -227,6 +227,18 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 	return strings.Join(lines, "\n")
 }
 
+// CheckRateLimit checks if there are enough GitHub API requests remaining.
+func CheckRateLimit(client *github.Client, minRemaining int) (bool, int, error) {
+	ctx := context.Background()
+	rateLimits, _, err := client.RateLimits(ctx)
+	if err != nil {
+		return false, 0, err
+	}
+
+	remaining := rateLimits.Core.Remaining
+	return remaining >= minRemaining, remaining, nil
+}
+
 func getTree(client *github.Client, ref *github.Reference, org string, repo string, file string, content string) (*github.Tree, error) {
 	ctx := context.Background()
 	entries := []*github.TreeEntry{

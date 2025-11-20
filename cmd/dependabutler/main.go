@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"log"
 	"os"
@@ -93,18 +92,6 @@ func getGitHubClient() *github.Client {
 	return githubapi.GetGitHubClient(gitHubToken)
 }
 
-// checkRateLimit checks if there are enough GitHub API requests remaining
-func checkRateLimit(client *github.Client, minRemaining int) (bool, int, error) {
-	ctx := context.Background()
-	rateLimits, _, err := client.RateLimits(ctx)
-	if err != nil {
-		return false, 0, err
-	}
-
-	remaining := rateLimits.Core.Remaining
-	return remaining >= minRemaining, remaining, nil
-}
-
 // ensureRateLimit ensures there are enough remaining GitHub API requests by waiting if necessary
 // Returns true if rate limit is sufficient, false if max retries exceeded
 func ensureRateLimit(client *github.Client, minRemaining int) bool {
@@ -112,7 +99,7 @@ func ensureRateLimit(client *github.Client, minRemaining int) bool {
 	const waitDuration = 5 * time.Minute
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		hasEnough, remaining, err := checkRateLimit(client, minRemaining)
+		hasEnough, remaining, err := githubapi.CheckRateLimit(client, minRemaining)
 		if err != nil {
 			log.Printf("ERROR Failed to check rate limit: %v", err)
 			return false
