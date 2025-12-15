@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/config"
 	"github.com/getyourguide/dependabutler/internal/pkg/githubapi"
@@ -56,9 +57,10 @@ func showUsageAndExit() {
 	os.Exit(1)
 }
 
-func getParameters() (string, string, bool, string, string, string, string) {
+func getParameters() (string, string, bool, string, string, string, string, int) {
 	var mode, dir, repo, repoFile, org, configFile string
 	var execute bool
+	var rateLimitBuffer int
 	flag.StringVar(&mode, "mode", "local", "local or remote")
 	flag.StringVar(&configFile, "configFile", "dependabutler.yml", "location of tool config file")
 	flag.BoolVar(&execute, "execute", false, "true: write file/create PR; false: log-only mode")
@@ -66,6 +68,7 @@ func getParameters() (string, string, bool, string, string, string, string) {
 	flag.StringVar(&org, "org", "", "org/owner name, required for mode=remote")
 	flag.StringVar(&repo, "repo", "", "repository name, for mode=remote")
 	flag.StringVar(&repoFile, "repoFile", "", "file containing repo list (one per line), for mode=remote")
+	flag.IntVar(&rateLimitBuffer, "rateLimitBuffer", 0, "safety buffer for GitHub API rate limits. Pauses when remaining requests drop below this number. 0=disabled.")
 	flag.Parse()
 	switch mode {
 	case "local":
@@ -77,7 +80,7 @@ func getParameters() (string, string, bool, string, string, string, string) {
 	default:
 		showUsageAndExit()
 	}
-	return mode, configFile, execute, dir, org, repo, repoFile
+	return mode, configFile, execute, dir, org, repo, repoFile, rateLimitBuffer
 }
 
 func getGitHubClient() *github.Client {
@@ -89,12 +92,37 @@ func getGitHubClient() *github.Client {
 	return githubapi.GetGitHubClient(gitHubToken)
 }
 
-func processRemoteRepo(toolConfig config.ToolConfig, execute bool, org string, repo string) {
+// ensureRateLimit ensures there are enough remaining GitHub API requests by waiting if necessary
+// Returns true if rate limit is sufficient, false if max retries exceeded
+func ensureRateLimit(client *github.Client, minRemaining int) bool {
+	const maxRetries = 20
+	const waitDuration = 5 * time.Minute
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		hasEnough, remaining, err := githubapi.CheckRateLimit(client, minRemaining)
+		if err != nil {
+			log.Printf("ERROR Failed to check rate limit: %v", err)
+			return false
+		}
+
+		if hasEnough {
+			return true
+		}
+
+		log.Printf("WARN  Rate limit too low (%d remaining, need %d). Waiting 5 minutes (attempt %d/%d)...",
+			remaining, minRemaining, attempt, maxRetries)
+		time.Sleep(waitDuration)
+	}
+
+	log.Printf("ERROR Rate limit still too low after %d attempts", maxRetries)
+	return false
+}
+
+func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *github.Client, execute bool, org string, repo string) {
 	// find manifests
 	manifests := map[string]string{}
 
 	// get the current config and file list, from GitHub, via API
-	gitHubClient := getGitHubClient()
 	gitHubRepo, err := githubapi.GetRepository(gitHubClient, org, repo)
 	if err != nil {
 		return
@@ -179,7 +207,7 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) {
 
 func main() {
 	// get parameters
-	mode, configFile, execute, dir, org, repo, repoFile := getParameters()
+	mode, configFile, execute, dir, org, repo, repoFile, rateLimitBuffer := getParameters()
 
 	// read and parse config file, and initialize the patterns
 	fileContent, err := util.ReadFile(configFile)
@@ -200,11 +228,20 @@ func main() {
 	if mode == "local" {
 		processLocalRepo(*toolConfig, execute, dir)
 	} else if mode == "remote" {
+		gitHubClient := getGitHubClient()
+
 		if repo != "" {
-			processRemoteRepo(*toolConfig, execute, org, repo)
+			processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo)
 		} else if repoFile != "" {
 			for _, repo := range util.ReadLinesFromFile(repoFile) {
-				processRemoteRepo(*toolConfig, execute, org, repo)
+				// Check rate limit before processing each repo if enabled
+				if rateLimitBuffer > 0 {
+					if !ensureRateLimit(gitHubClient, rateLimitBuffer) {
+						log.Printf("ERROR Rate limit check failed, exiting")
+						os.Exit(1)
+					}
+				}
+				processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo)
 			}
 		}
 	}
