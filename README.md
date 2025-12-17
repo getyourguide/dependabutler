@@ -34,10 +34,15 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 | repoFile            | ³         |                     | file containing repositories, one per line    |
 | stable-group-prefixes | no      | true                | ensures group names have numeric prefixes (01_, 02_, etc.) |
 | update-missing-cooldown-settings | no | true          | update existing manifests adding default settings |
+| rateLimitBuffer                  | no⁴   | 0                   | GitHub API rate limit buffer (0=disabled). |
 
 ¹ mandatory for local mode  
 ² mandatory for remote mode  
 ³ one of `repo` and `repoFile` required for remote mode (if both are set, `repo` takes precedence)  
+⁴ GitHub enforces API rate limits (e.g., 5000 requests per hour). Each repository may require multiple API calls,
+depending on the number of manifest files it contains. When the remaining API calls fall below a defined threshold, 
+the tool pauses and waits for the rate limit to reset. To prevent interruptions, set the buffer threshold based on 
+the expected number of API calls per repository (for example, 20 calls per repo).
 
 
 ### Local Mode
