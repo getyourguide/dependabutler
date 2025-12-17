@@ -39,9 +39,10 @@ jobs:
           golint -set_exit_status ./...
       - name: staticcheck.io
         if: matrix.platform == 'ubuntu-latest'
-        uses: dominikh/staticcheck-action@024238d2898c874f26d723e7d0ff4308c35589a2 # v1.4.0
-        with:
-          install-go: false
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck -checks all ./...
       - name: gofumpt formatting
         if: matrix.platform == 'ubuntu-latest'
         run: |
