@@ -136,10 +136,10 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *github.Client
 		if strings.Contains(err.Error(), "This repository is empty") {
 			log.Printf("INFO  Repository %v is empty. Nothing to do.", repo)
 			return true // not an error, just skip
-		} else {
-			log.Printf("ERROR Could not read config of repo %v: %v", repo, err)
-			return false
 		}
+
+		log.Printf("ERROR Could not read config of repo %v: %v", repo, err)
+		return false
 	}
 	baseBranch := *gitHubRepo.DefaultBranch
 	fileList := githubapi.GetRepoFileList(gitHubClient, org, repo, baseBranch)
