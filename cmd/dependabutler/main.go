@@ -118,27 +118,28 @@ func ensureRateLimit(client *github.Client, minRemaining int) bool {
 	return false
 }
 
-func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *github.Client, execute bool, org string, repo string) {
+func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *github.Client, execute bool, org string, repo string) (success bool) {
 	// find manifests
 	manifests := map[string]string{}
 
 	// get the current config and file list, from GitHub, via API
 	gitHubRepo, err := githubapi.GetRepository(gitHubClient, org, repo)
 	if err != nil {
-		return
+		return false
 	}
 	if *gitHubRepo.Archived {
 		log.Printf("INFO  Repository %v is archived. Nothing to do.", repo)
-		return
+		return true // not an error, just skip
 	}
 	currentConfig, err := githubapi.GetFileContent(gitHubClient, org, repo, ".github/dependabot.yml", "")
 	if err != nil {
 		if strings.Contains(err.Error(), "This repository is empty") {
 			log.Printf("INFO  Repository %v is empty. Nothing to do.", repo)
-		} else {
-			log.Printf("ERROR Could not read config of repo %v: %v", repo, err)
+			return true // not an error, just skip
 		}
-		return
+
+		log.Printf("ERROR Could not read config of repo %v: %v", repo, err)
+		return false
 	}
 	baseBranch := *gitHubRepo.DefaultBranch
 	fileList := githubapi.GetRepoFileList(gitHubClient, org, repo, baseBranch)
@@ -158,15 +159,17 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *github.Client
 					log.Fatalf("ERROR Could not create PR for repo %v, permission problem. Stopping. %v", repo, err)
 				} else {
 					log.Printf("ERROR Could not create PR for repo %v: %v", repo, err)
+					return false
 				}
 			}
 		} else {
 			log.Printf("INFO  log-only mode, would create PR for %v:\n----------\n%v\n----------\n%v\n----------\nuse -execute=true to apply", repo, prDesc, string(yamlContent))
 		}
 	}
+	return true
 }
 
-func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) {
+func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) (success bool) {
 	// find manifests
 	manifests := map[string]string{}
 
@@ -180,7 +183,7 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) {
 			currentConfig = []byte("version: 2")
 		} else {
 			log.Printf("ERROR Could not read config from file %v: %v", fullPath, err)
-			return
+			return false
 		}
 	}
 	config.ScanLocalDirectory(dir, "", manifests)
@@ -192,17 +195,18 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) {
 		if execute {
 			if err := util.MakeDirIfNotExists(dirPath); err != nil {
 				log.Printf("ERROR Could not create directory %v : %v\n", dirPath, err)
-				return
+				return false
 			}
 			if err := util.SaveFile(fullPath, yamlContent); err != nil {
 				log.Printf("ERROR Could not save file %v : %v\n", fullPath, err)
-				return
+				return false
 			}
 			log.Printf("INFO  File %v written.", fullPath)
 		} else {
 			log.Printf("INFO  log-only mode, would write file %v:\n----------\n%v\n----------\nuse -execute=true to apply", fullPath, string(yamlContent))
 		}
 	}
+	return true
 }
 
 func main() {
@@ -213,25 +217,31 @@ func main() {
 	fileContent, err := util.ReadFile(configFile)
 	if err != nil {
 		log.Printf("ERROR Could not read tool config file for repo %s: %v.", repo, configFile)
-		return
+		os.Exit(1)
 	}
 	toolConfig, err := config.ParseToolConfig(fileContent)
 	if err != nil {
 		log.Printf("ERROR Could not parse tool config for repo %s: %v", repo, err)
-		return
+		os.Exit(1)
 	}
 
 	// initialize / precompile the patterns
 	toolConfig.InitializePatterns()
 
+	// track number of failed repositories
+	failureCount := 0
 	// process
 	if mode == "local" {
-		processLocalRepo(*toolConfig, execute, dir)
+		if !processLocalRepo(*toolConfig, execute, dir) {
+			failureCount++
+		}
 	} else if mode == "remote" {
 		gitHubClient := getGitHubClient()
 
 		if repo != "" {
-			processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo)
+			if !processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo) {
+				failureCount++
+			}
 		} else if repoFile != "" {
 			for _, repo := range util.ReadLinesFromFile(repoFile) {
 				// Check rate limit before processing each repo if enabled
@@ -241,9 +251,16 @@ func main() {
 						os.Exit(1)
 					}
 				}
-				processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo)
+				if !processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo) {
+					failureCount++
+				}
 			}
 		}
+	}
+	// Exit with error code if any processing failed
+	if failureCount > 0 {
+		log.Printf("ERROR %d repositories could not be processed successfully.", failureCount)
+		os.Exit(1)
 	}
 }
 
