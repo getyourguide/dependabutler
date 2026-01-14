@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/goccy/go-yaml"
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
+	"github.com/goccy/go-yaml"
 )
 
 func TestParseToolConfig(t *testing.T) {
