@@ -2,7 +2,6 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"net/url"
@@ -13,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
+	"github.com/goccy/go-yaml"
 	"github.com/google/go-github/v50/github"
-	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -232,6 +231,10 @@ func (config *ToolConfig) Parse(data []byte) error {
 func (config *DependabotConfig) Parse(data []byte) error {
 	if err := yaml.Unmarshal(data, config); err != nil {
 		return err
+	}
+	// Ensure version is set (if empty data was unmarshaled, it might be 0)
+	if config.Version == 0 {
+		config.Version = 2
 	}
 	for i, update := range config.Updates {
 		if update.Directory != "/" && strings.HasSuffix(update.Directory, "/") {
@@ -469,7 +472,7 @@ func ScanLocalDirectory(baseDirectory string, directory string, manifests map[st
 // ToYaml returns a YAML representation of a dependabot config.
 func (config *DependabotConfig) ToYaml() []byte {
 	// sort entries in update list, to avoid commits due to changed order only
-	// nothing to be done for registries, as yaml v3 marshals maps sorted by key
+	// nothing to be done for registries, as yaml marshals maps sorted by key
 	if len(config.Updates) > 1 {
 		sort.Slice(config.Updates, func(i, j int) bool {
 			a := config.Updates[i]
@@ -478,17 +481,19 @@ func (config *DependabotConfig) ToYaml() []byte {
 				(a.PackageEcosystem == b.PackageEcosystem && a.Directory < b.Directory)
 		})
 	}
-	buf := new(bytes.Buffer)
-	encoder := yaml.NewEncoder(buf)
-	encoder.SetIndent(2)
-	err := encoder.Encode(config)
+
+	// Marshal to YAML (goccy/go-yaml preserves Unicode/emojis natively)
+	rawBytes, err := yaml.Marshal(config)
 	if err != nil {
 		log.Printf("ERROR Could not encode yml: %v", err)
+		return nil
 	}
-	// quote expressions like ${{secrets.MY_SECRET}} - after GitHub replaces variables, there might be quotes needed
-	re := regexp.MustCompile(`(\$\{\{[^}]+\}\})`)
-	rawString := buf.String()
-	rawString = re.ReplaceAllString(rawString, `"$1"`)
+
+	// Quote GitHub secret expressions like ${{secrets.MY_SECRET}}
+	rawString := string(rawBytes)
+	secretsRe := regexp.MustCompile(`(\$\{\{[^}]+\}\})`)
+	rawString = secretsRe.ReplaceAllString(rawString, `"$1"`)
+
 	return []byte(rawString)
 }
 

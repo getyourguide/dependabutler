@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/goccy/go-yaml"
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
-	"gopkg.in/yaml.v3"
 )
 
 func TestParseToolConfig(t *testing.T) {
@@ -189,11 +189,11 @@ updates:
 `,
 			`version: 2
 updates:
-  - package-ecosystem: docker
-    directories:
-      - /one
-      - /two
-      - /three
+- package-ecosystem: docker
+  directories:
+  - /one
+  - /two
+  - /three
 `,
 		},
 	} {
@@ -924,4 +924,85 @@ func TestFixExistingUpdateConfigWithReviewers(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestToYamlWithEmojis(t *testing.T) {
+	// Test that emojis and other Unicode characters are preserved correctly
+	config := DependabotConfig{
+		Version: 2,
+		Registries: map[string]Registry{
+			"npm-registry": {
+				Type:     "npm-registry",
+				URL:      "https://npm.example.com",
+				Username: "user",
+				Password: "${{secrets.NPM_TOKEN}}",
+			},
+		},
+		Updates: []Update{
+			{
+				PackageEcosystem:      "npm",
+				Directory:             "/",
+				OpenPullRequestsLimit: intPtr(5),
+				Schedule: Schedule{
+					Interval: "daily",
+				},
+				CommitMessage: CommitMessage{
+					Prefix: "🔧 deps:",
+				},
+			},
+			{
+				PackageEcosystem: "docker",
+				Directory:        "/app",
+				Schedule: Schedule{
+					Interval: "weekly",
+				},
+				CommitMessage: CommitMessage{
+					Prefix: "🐳 docker:",
+				},
+			},
+		},
+	}
+
+	yamlBytes := config.ToYaml()
+	yamlString := string(yamlBytes)
+
+	// Verify emojis are preserved
+	if !contains(yamlString, "🔧 deps:") {
+		t.Errorf("ToYaml() failed to preserve emoji '🔧' in commit message prefix")
+	}
+	if !contains(yamlString, "🐳 docker:") {
+		t.Errorf("ToYaml() failed to preserve emoji '🐳' in commit message prefix")
+	}
+
+	// Verify the YAML can be parsed back correctly
+	parsedConfig, err := ParseDependabotConfig(yamlBytes)
+	if err != nil {
+		t.Errorf("ToYaml() produced invalid YAML that cannot be parsed: %v", err)
+	}
+
+	// Verify emojis survive round-trip
+	// Note: Updates are sorted by package-ecosystem, so docker comes before npm
+	if len(parsedConfig.Updates) >= 1 && parsedConfig.Updates[0].CommitMessage.Prefix != "🐳 docker:" {
+		t.Errorf("ToYaml() round-trip failed to preserve emoji in first update. Expected '🐳 docker:', got '%v'", parsedConfig.Updates[0].CommitMessage.Prefix)
+	}
+	if len(parsedConfig.Updates) >= 2 && parsedConfig.Updates[1].CommitMessage.Prefix != "🔧 deps:" {
+		t.Errorf("ToYaml() round-trip failed to preserve emoji in second update. Expected '🔧 deps:', got '%v'", parsedConfig.Updates[1].CommitMessage.Prefix)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsHelper(s, substr)))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func intPtr(i int) *int {
+	return &i
 }
