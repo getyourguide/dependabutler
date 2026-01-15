@@ -1006,3 +1006,110 @@ func containsHelper(s, substr string) bool {
 func intPtr(i int) *int {
 	return &i
 }
+
+func TestIsEnvVarReference(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		expected bool
+	}{
+		{"Empty string", "", false},
+		{"Regular URL", "https://example.com", false},
+		{"Secret reference", "${{secrets.MY_SECRET}}", true},
+		{"Secret with underscores", "${{secrets.JFROG_ARTIFACTORY_URL}}", true},
+		{"Secret in middle of string", "prefix ${{secrets.TOKEN}} suffix", true},
+		{"Multiple secrets", "${{secrets.USER}} ${{secrets.PASS}}", true},
+		{"Not a secret - missing closing braces", "${{secrets.INCOMPLETE", false},
+		{"Not a secret - missing opening braces", "secrets.INCOMPLETE}}", false},
+		{"Environment variable", "${{env.MY_VAR}}", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isEnvVarReference(tt.value)
+			if got != tt.expected {
+				t.Errorf("isEnvVarReference(%q) = %v, expected %v", tt.value, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsRegistryUsed(t *testing.T) {
+	loadFileWithHostname := func(hostname string) LoadFileContent {
+		return func(_ string, _ LoadFileContentParameters) string {
+			return "some content with " + hostname + " in it"
+		}
+	}
+
+	tests := []struct {
+		name         string
+		manifestFile string
+		manifestPath string
+		registry     DefaultRegistry
+		loadFileFn   LoadFileContent
+		expected     bool
+		description  string
+	}{
+		{
+			name:         "Environment variable URL should return true",
+			manifestFile: "Dockerfile",
+			manifestPath: "/",
+			registry: DefaultRegistry{
+				Type:             "docker-registry",
+				URL:              "${{secrets.JFROG_ARTIFACTORY_URL}}",
+				URLMatchRequired: true,
+			},
+			loadFileFn:  LoadFileContentDummy,
+			expected:    true,
+			description: "When URL is an environment variable reference, registry should be included",
+		},
+		{
+			name:         "Valid URL with hostname match",
+			manifestFile: "Dockerfile",
+			manifestPath: "/",
+			registry: DefaultRegistry{
+				Type:             "docker-registry",
+				URL:              "https://docker.example.com",
+				URLMatchRequired: true,
+			},
+			loadFileFn:  loadFileWithHostname("docker.example.com"),
+			expected:    true,
+			description: "When hostname is found in file, should return true",
+		},
+		{
+			name:         "Valid URL without hostname match",
+			manifestFile: "Dockerfile",
+			manifestPath: "/",
+			registry: DefaultRegistry{
+				Type:             "docker-registry",
+				URL:              "https://docker.example.com",
+				URLMatchRequired: true,
+			},
+			loadFileFn:  LoadFileContentDummy,
+			expected:    false,
+			description: "When hostname is not found in file, should return false",
+		},
+		{
+			name:         "Invalid URL",
+			manifestFile: "Dockerfile",
+			manifestPath: "/",
+			registry: DefaultRegistry{
+				Type:             "docker-registry",
+				URL:              "not a valid url",
+				URLMatchRequired: true,
+			},
+			loadFileFn:  LoadFileContentDummy,
+			expected:    false,
+			description: "Invalid URL should return false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsRegistryUsed(tt.manifestFile, tt.manifestPath, tt.registry, tt.loadFileFn, LoadFileContentParameters{})
+			if got != tt.expected {
+				t.Errorf("IsRegistryUsed() = %v, expected %v. %s", got, tt.expected, tt.description)
+			}
+		})
+	}
+}
