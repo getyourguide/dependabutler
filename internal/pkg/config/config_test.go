@@ -1042,13 +1042,13 @@ func TestIsRegistryUsed(t *testing.T) {
 	}
 
 	tests := []struct {
-		name            string
-		manifestFile    string
-		manifestPath    string
-		registry        DefaultRegistry
-		loadFileFn      LoadFileContent
-		expected        bool
-		description     string
+		name         string
+		manifestFile string
+		manifestPath string
+		registry     DefaultRegistry
+		loadFileFn   LoadFileContent
+		expected     bool
+		description  string
 	}{
 		{
 			name:         "Environment variable URL should return true",
