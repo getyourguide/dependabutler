@@ -96,3 +96,11 @@ Initial version.
 ## v0.8.2
 
 - Added deprecation support for the `reviewers` field in `dependabot.yml` (will be removed by GitHub in May 2025)
+
+## v0.9.0
+
+- Added support for zero value in `open-pull-requests-limit` configuration option to stop PRs from Dependabot.
+- Added support for registry URL as environment variable (previously only username and password were supported).
+- Added error handling to exit with status code 1 when errors occur during processing, ensuring GitHub Actions can detect failures.
+- Added throttling mechanism for GitHub API calls with new `rateLimitBuffer` CLI parameter to prevent silent failures due to rate limit exhaustion.
+- Migrated from unmaintained `gopkg.in/yaml.v3` to actively maintained `github.com/goccy/go-yaml` library, fixing emoji corruption issues.
