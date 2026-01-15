@@ -304,10 +304,23 @@ func (config *DependabotConfig) IsManifestCovered(manifestFile string, manifestT
 	return false
 }
 
+// isEnvVarReference returns true if the string is a GitHub Actions secret or environment variable reference
+func isEnvVarReference(value string) bool {
+	secretPattern := regexp.MustCompile(`\$\{\{[^}]+\}\}`)
+	return secretPattern.MatchString(value)
+}
+
 // IsRegistryUsed returns if a registry is used by a manifest file
 func IsRegistryUsed(manifestFile string, manifestPath string, defaultRegistry DefaultRegistry,
 	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
 ) bool {
+	// If the URL is an environment variable reference, we can't validate it or extract hostname
+	// In this case, we include the registry (returning true)
+	if isEnvVarReference(defaultRegistry.URL) {
+		log.Printf("INFO  registry URL is an environment variable reference, including registry without URL match check")
+		return true
+	}
+
 	// check if registry is used for this manifest file - only add it if so
 	registryURL, err := url.Parse(defaultRegistry.URL)
 	if err != nil || registryURL.Hostname() == "" {
