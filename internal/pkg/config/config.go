@@ -515,7 +515,8 @@ func (config *DependabotConfig) ToYaml() []byte {
 		// Extract hex code and convert to rune using strconv
 		hexStr := match[2:] // Skip \U prefix
 		codePoint, err := strconv.ParseUint(hexStr, 16, 32)
-		if err == nil {
+		if err == nil && codePoint <= 0x10FFFF {
+			// Valid Unicode code point range is 0 to 0x10FFFF (max 21 bits)
 			return string(rune(codePoint))
 		}
 		return match
