@@ -183,7 +183,7 @@ func TestParseDependabotConfigWithDirectories(t *testing.T) {
 updates:
   - package-ecosystem: docker
     directories:
-      - "/one"
+      - "/one"	
       - "/two"
       - "/three"
 `,
