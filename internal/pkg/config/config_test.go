@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
-	"github.com/goccy/go-yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestParseToolConfig(t *testing.T) {
@@ -189,11 +189,11 @@ updates:
 `,
 			`version: 2
 updates:
-- package-ecosystem: docker
-  directories:
-  - /one
-  - /two
-  - /three
+  - package-ecosystem: docker
+    directories:
+      - /one
+      - /two
+      - /three
 `,
 		},
 	} {
