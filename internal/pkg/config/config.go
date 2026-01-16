@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net/url"
@@ -9,11 +10,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
-	"github.com/goccy/go-yaml"
 	"github.com/google/go-github/v50/github"
+	"go.yaml.in/yaml/v4"
 )
 
 var (
@@ -495,15 +497,31 @@ func (config *DependabotConfig) ToYaml() []byte {
 		})
 	}
 
-	// Marshal to YAML (goccy/go-yaml preserves Unicode/emojis natively)
-	rawBytes, err := yaml.Marshal(config)
+	buf := new(bytes.Buffer)
+	encoder := yaml.NewEncoder(buf)
+	encoder.SetIndent(2)
+	err := encoder.Encode(config)
 	if err != nil {
 		log.Printf("ERROR Could not encode yml: %v", err)
 		return nil
 	}
 
+	// Un-escape Unicode sequences for emojis and other characters
+	// go.yaml.in/yaml/v4 escapes Unicode as \U0001F527, we want the actual emoji 🔧
+	// Replace the escape sequences inline without touching the quotes
+	rawString := buf.String()
+	unicodeRe := regexp.MustCompile(`\\U([0-9A-Fa-f]{8})`)
+	rawString = unicodeRe.ReplaceAllStringFunc(rawString, func(match string) string {
+		// Extract hex code and convert to rune using strconv
+		hexStr := match[2:] // Skip \U prefix
+		codePoint, err := strconv.ParseUint(hexStr, 16, 32)
+		if err == nil {
+			return string(rune(codePoint))
+		}
+		return match
+	})
+
 	// Quote GitHub secret expressions like ${{secrets.MY_SECRET}}
-	rawString := string(rawBytes)
 	secretsRe := regexp.MustCompile(`(\$\{\{[^}]+\}\})`)
 	rawString = secretsRe.ReplaceAllString(rawString, `"$1"`)
 
