@@ -189,11 +189,11 @@ updates:
 `,
 			`version: 2
 updates:
-  - package-ecosystem: docker
-    directories:
-      - /one
-      - /two
-      - /three
+- package-ecosystem: docker
+  directories:
+  - /one
+  - /two
+  - /three
 `,
 		},
 	} {

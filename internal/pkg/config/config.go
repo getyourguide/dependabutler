@@ -500,6 +500,7 @@ func (config *DependabotConfig) ToYaml() []byte {
 	buf := new(bytes.Buffer)
 	encoder := yaml.NewEncoder(buf)
 	encoder.SetIndent(2)
+	encoder.CompactSeqIndent()
 	err := encoder.Encode(config)
 	if err != nil {
 		log.Printf("ERROR Could not encode yml: %v", err)
