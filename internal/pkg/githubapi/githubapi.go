@@ -182,7 +182,7 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 		lines = append(lines, "| type | name |")
 		lines = append(lines, "| - | - |")
 		for _, registry := range changeInfo.NewRegistries {
-			lines = append(lines, fmt.Sprintf("| %v | %v |", registry.Type, registry.Name))
+			lines = append(lines, fmt.Sprintf("| %v | `%v` |", registry.Type, registry.Name))
 		}
 	}
 	if len(changeInfo.RemovedRegistries) > 0 {
