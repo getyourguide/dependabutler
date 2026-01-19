@@ -175,14 +175,14 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 
 // CreatePRDescription renders the body of the PR to be created.
 func CreatePRDescription(changeInfo config.ChangeInfo) string {
-	lines := []string{"### dependabutler has created this PR to update .github/dependabot.yml"}
+	lines := []string{"### dependabutler has created this PR to update `.github/dependabot.yml`"}
 	if len(changeInfo.NewRegistries) > 0 {
 		lines = append(lines, "")
 		lines = append(lines, "#### 🏛 registries added")
 		lines = append(lines, "| type | name |")
 		lines = append(lines, "| - | - |")
 		for _, registry := range changeInfo.NewRegistries {
-			lines = append(lines, fmt.Sprintf("| %v | %v |", registry.Type, registry.Name))
+			lines = append(lines, fmt.Sprintf("| %v | `%v` |", registry.Type, registry.Name))
 		}
 	}
 	if len(changeInfo.RemovedRegistries) > 0 {
@@ -191,7 +191,7 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 		lines = append(lines, "| type | name |")
 		lines = append(lines, "| - | - |")
 		for _, registry := range changeInfo.RemovedRegistries {
-			lines = append(lines, fmt.Sprintf("| %v | %v |", registry.Type, registry.Name))
+			lines = append(lines, fmt.Sprintf("| %v | `%v` |", registry.Type, registry.Name))
 		}
 	}
 	if len(changeInfo.NewUpdates) > 0 {
@@ -200,7 +200,7 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 		lines = append(lines, "| type | directory | file |")
 		lines = append(lines, "| - | - | - |")
 		for _, update := range changeInfo.NewUpdates {
-			lines = append(lines, fmt.Sprintf("| %v | %v | %v |", update.Type, update.Directory, update.File))
+			lines = append(lines, fmt.Sprintf("| %v | `%v` | `%v` |", update.Type, update.Directory, update.File))
 		}
 	}
 	if len(changeInfo.FixedUpdates) > 0 {
@@ -209,7 +209,7 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 		lines = append(lines, "| type | directory | ")
 		lines = append(lines, "| - | - |")
 		for _, update := range changeInfo.FixedUpdates {
-			lines = append(lines, fmt.Sprintf("| %v | %v |", update.Type, update.Directory))
+			lines = append(lines, fmt.Sprintf("| %v | `%v` |", update.Type, update.Directory))
 		}
 	}
 	if len(changeInfo.RemovedUpdates) > 0 {
@@ -218,7 +218,7 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 		lines = append(lines, "| type | directory | ")
 		lines = append(lines, "| - | - |")
 		for _, update := range changeInfo.RemovedUpdates {
-			lines = append(lines, fmt.Sprintf("| %v | %v |", update.Type, update.Directory))
+			lines = append(lines, fmt.Sprintf("| %v | `%v` |", update.Type, update.Directory))
 		}
 	}
 	lines = append(lines, "")
