@@ -201,7 +201,7 @@ updates:
 		if err != nil {
 			t.Errorf("TestParseDependabotConfigWithDirectories() failed;\n  parsing error %v", err)
 		}
-		got := (string)(parsedConfig.ToYaml())
+		got := string(parsedConfig.ToYaml())
 		if tt.expected != got {
 			t.Errorf("TestParseDependabotConfigWithDirectories() failed;\n  expected \n%v\n  got      \n%v\n", tt.expected, got)
 		}
