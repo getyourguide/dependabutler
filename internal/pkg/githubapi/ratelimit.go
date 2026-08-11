@@ -54,13 +54,13 @@ func (s RateLimitState) WaitFor(now time.Time) time.Duration {
 // may be nil. A rate limit error takes precedence over the response, because
 // go-github returns an empty response when it blocks a request locally on the
 // strength of a previously seen limit.
-func (c *Client) observe(resp *github.Response, err error) {
-	c.rateMutex.Lock()
-	defer c.rateMutex.Unlock()
+func (client *Client) observe(resp *github.Response, err error) {
+	client.rateMutex.Lock()
+	defer client.rateMutex.Unlock()
 
 	var rateErr *github.RateLimitError
 	if errors.As(err, &rateErr) {
-		c.rate = RateLimitState{
+		client.rate = RateLimitState{
 			Known:     true,
 			Remaining: rateErr.Rate.Remaining,
 			Reset:     rateErr.Rate.Reset.Time,
@@ -82,7 +82,7 @@ func (c *Client) observe(resp *github.Response, err error) {
 		if abuseErr.RetryAfter != nil && *abuseErr.RetryAfter > 0 {
 			retryAfter = *abuseErr.RetryAfter
 		}
-		c.rate = RateLimitState{
+		client.rate = RateLimitState{
 			Known:     true,
 			Reset:     time.Now().Add(retryAfter),
 			Exhausted: true,
@@ -94,7 +94,7 @@ func (c *Client) observe(resp *github.Response, err error) {
 		// no rate limit headers to learn from, keep what we had
 		return
 	}
-	c.rate = RateLimitState{
+	client.rate = RateLimitState{
 		Known:     true,
 		Remaining: resp.Rate.Remaining,
 		Reset:     resp.Rate.Reset.Time,
@@ -103,8 +103,8 @@ func (c *Client) observe(resp *github.Response, err error) {
 
 // RateLimit returns the rate limit state observed on this client's most recent
 // API response.
-func (c *Client) RateLimit() RateLimitState {
-	c.rateMutex.Lock()
-	defer c.rateMutex.Unlock()
-	return c.rate
+func (client *Client) RateLimit() RateLimitState {
+	client.rateMutex.Lock()
+	defer client.rateMutex.Unlock()
+	return client.rate
 }
