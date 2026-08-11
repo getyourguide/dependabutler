@@ -60,7 +60,6 @@ func showUsageAndExit() {
 func getParameters() (string, string, bool, string, string, string, string) {
 	var mode, dir, repo, repoFile, org, configFile string
 	var execute bool
-	var rateLimitBuffer int
 	flag.StringVar(&mode, "mode", "local", "local or remote")
 	flag.StringVar(&configFile, "configFile", "dependabutler.yml", "location of tool config file")
 	flag.BoolVar(&execute, "execute", false, "true: write file/create PR; false: log-only mode")
@@ -68,12 +67,7 @@ func getParameters() (string, string, bool, string, string, string, string) {
 	flag.StringVar(&org, "org", "", "org/owner name, required for mode=remote")
 	flag.StringVar(&repo, "repo", "", "repository name, for mode=remote")
 	flag.StringVar(&repoFile, "repoFile", "", "file containing repo list (one per line), for mode=remote")
-	flag.IntVar(&rateLimitBuffer, "rateLimitBuffer", 0, "deprecated and ignored; rate limits are handled automatically")
 	flag.Parse()
-	if rateLimitBuffer != 0 {
-		// still accepted so existing pipelines keep working, see CHANGELOG v0.9.5
-		log.Printf("WARN  -rateLimitBuffer is deprecated and ignored. Rate limits are now handled automatically.")
-	}
 	switch mode {
 	case "local":
 		break

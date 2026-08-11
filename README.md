@@ -29,13 +29,11 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 | repoFile            | ³         |                     | file containing repositories, one per line    |
 | stable-group-prefixes | no      | true                | ensures group names have numeric prefixes (01_, 02_, etc.) |
 | update-missing-cooldown-settings | no | true          | update existing manifests adding default settings |
-| rateLimitBuffer                  | no⁴   | 0                   | deprecated and ignored, see note below |
 
 ¹ mandatory for local mode  
 ² mandatory for remote mode  
 ³ one of `repo` and `repoFile` required for remote mode (if both are set, `repo` takes precedence)  
-⁴ Deprecated as of v0.9.5 and ignored. The flag is still accepted so existing pipelines keep working, but it no
-longer has an effect: rate limits are handled automatically.
+### GitHub API Rate Limits
 
 GitHub enforces API rate limits (e.g. 5000 requests per hour), and each repository takes several API calls. When a
 call is rejected because the limit has been reached, dependabutler waits until the reset time reported by GitHub and
