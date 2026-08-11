@@ -100,6 +100,22 @@ func TestObserveResponse(t *testing.T) {
 		}
 	})
 
+	t.Run("secondary rate limit without retry-after falls back", func(t *testing.T) {
+		ResetObservedRateLimit()
+		before := time.Now()
+		ObserveResponse(nil, &github.AbuseRateLimitError{})
+		state := CurrentRateLimit()
+		if !state.Exhausted {
+			t.Fatalf("unexpected state: %+v", state)
+		}
+		if state.Reset.Before(before.Add(secondaryLimitFallback)) {
+			t.Errorf("Reset = %v, want at least now + %v", state.Reset, secondaryLimitFallback)
+		}
+		if wait := state.WaitFor(time.Now()); wait <= 0 {
+			t.Errorf("WaitFor() = %v, want a wait to be enforced", wait)
+		}
+	})
+
 	t.Run("a successful response clears exhaustion", func(t *testing.T) {
 		ResetObservedRateLimit()
 		ObserveResponse(&github.Response{}, &github.RateLimitError{Response: &http.Response{}})

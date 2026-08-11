@@ -12,6 +12,11 @@ import (
 // second before the rate limit window has actually rolled over.
 const resetGrace = 5 * time.Second
 
+// secondaryLimitFallback is how long to wait after hitting a secondary rate
+// limit that came without a Retry-After header. GitHub does not guarantee the
+// header, and retrying straight into a secondary limit tends to extend it.
+const secondaryLimitFallback = time.Minute
+
 // RateLimitState is a snapshot of the GitHub API rate limit, taken from the
 // X-RateLimit-* headers of the most recent API response.
 //
@@ -70,13 +75,24 @@ func ObserveResponse(resp *github.Response, err error) {
 		return
 	}
 
+	// A secondary rate limit (go-github still calls it "abuse", the name GitHub
+	// used before renaming it) is a separate mechanism from the hourly quota: it
+	// is triggered by the shape of the traffic rather than its volume - too many
+	// concurrent requests, or too many content-creating ones such as commits and
+	// pull requests in a burst. The hourly budget can be nearly untouched when it
+	// fires, so X-RateLimit-Remaining says nothing useful here and Retry-After is
+	// the only signal for how long to hold off.
 	var abuseErr *github.AbuseRateLimitError
 	if errors.As(err, &abuseErr) {
-		reset := time.Now()
-		if abuseErr.RetryAfter != nil {
-			reset = reset.Add(*abuseErr.RetryAfter)
+		retryAfter := secondaryLimitFallback
+		if abuseErr.RetryAfter != nil && *abuseErr.RetryAfter > 0 {
+			retryAfter = *abuseErr.RetryAfter
 		}
-		rateState = RateLimitState{Known: true, Reset: reset, Exhausted: true}
+		rateState = RateLimitState{
+			Known:     true,
+			Reset:     time.Now().Add(retryAfter),
+			Exhausted: true,
+		}
 		return
 	}
 
