@@ -2,7 +2,6 @@ package githubapi
 
 import (
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/google/go-github/v50/github"
@@ -51,22 +50,17 @@ func (s RateLimitState) WaitFor(now time.Time) time.Duration {
 	return s.Reset.Sub(now) + resetGrace
 }
 
-var (
-	rateStateMutex sync.Mutex
-	rateState      RateLimitState
-)
-
-// ObserveResponse records the rate limit reported by a GitHub API call. Both
-// arguments may be nil. A rate limit error takes precedence over the response,
-// because go-github returns an empty response when it blocks a request locally
-// on the strength of a previously seen limit.
-func ObserveResponse(resp *github.Response, err error) {
-	rateStateMutex.Lock()
-	defer rateStateMutex.Unlock()
+// observe records the rate limit reported by a GitHub API call. Both arguments
+// may be nil. A rate limit error takes precedence over the response, because
+// go-github returns an empty response when it blocks a request locally on the
+// strength of a previously seen limit.
+func (c *Client) observe(resp *github.Response, err error) {
+	c.rateMutex.Lock()
+	defer c.rateMutex.Unlock()
 
 	var rateErr *github.RateLimitError
 	if errors.As(err, &rateErr) {
-		rateState = RateLimitState{
+		c.rate = RateLimitState{
 			Known:     true,
 			Remaining: rateErr.Rate.Remaining,
 			Reset:     rateErr.Rate.Reset.Time,
@@ -88,7 +82,7 @@ func ObserveResponse(resp *github.Response, err error) {
 		if abuseErr.RetryAfter != nil && *abuseErr.RetryAfter > 0 {
 			retryAfter = *abuseErr.RetryAfter
 		}
-		rateState = RateLimitState{
+		c.rate = RateLimitState{
 			Known:     true,
 			Reset:     time.Now().Add(retryAfter),
 			Exhausted: true,
@@ -100,23 +94,17 @@ func ObserveResponse(resp *github.Response, err error) {
 		// no rate limit headers to learn from, keep what we had
 		return
 	}
-	rateState = RateLimitState{
+	c.rate = RateLimitState{
 		Known:     true,
 		Remaining: resp.Rate.Remaining,
 		Reset:     resp.Rate.Reset.Time,
 	}
 }
 
-// CurrentRateLimit returns the most recently observed rate limit state.
-func CurrentRateLimit() RateLimitState {
-	rateStateMutex.Lock()
-	defer rateStateMutex.Unlock()
-	return rateState
-}
-
-// ResetObservedRateLimit discards the observed rate limit state.
-func ResetObservedRateLimit() {
-	rateStateMutex.Lock()
-	defer rateStateMutex.Unlock()
-	rateState = RateLimitState{}
+// RateLimit returns the rate limit state observed on this client's most recent
+// API response.
+func (c *Client) RateLimit() RateLimitState {
+	c.rateMutex.Lock()
+	defer c.rateMutex.Unlock()
+	return c.rate
 }

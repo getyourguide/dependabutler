@@ -11,12 +11,11 @@ import (
 	"github.com/getyourguide/dependabutler/internal/pkg/config"
 	"github.com/getyourguide/dependabutler/internal/pkg/githubapi"
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
-	"github.com/google/go-github/v50/github"
 )
 
 // LoadRemoteFileContent is the implementation of LoadFileContent, for remote files (GitHub).
 func LoadRemoteFileContent(file string, params config.LoadFileContentParameters) string {
-	content, err := githubapi.GetFileContent(params.GitHubClient, params.Org, params.Repo, file, "")
+	content, err := params.Client.GetFileContent(params.Org, params.Repo, file, "")
 	if err != nil {
 		return ""
 	}
@@ -35,7 +34,7 @@ func LoadLocalFileContent(file string, params config.LoadFileContentParameters) 
 
 // CheckRemoteDirectoryExists is the implementation of CheckFolderExists, for remote directories (GitHub).
 func CheckRemoteDirectoryExists(directory string, params config.CheckDirectoryExistsParameters) bool {
-	exists, err := githubapi.CheckDirectoryExists(params.GitHubClient, params.Org, params.Repo, directory, "")
+	exists, err := params.Client.CheckDirectoryExists(params.Org, params.Repo, directory, "")
 	if err != nil {
 		return false
 	}
@@ -81,13 +80,13 @@ func getParameters() (string, string, bool, string, string, string, string) {
 	return mode, configFile, execute, dir, org, repo, repoFile
 }
 
-func getGitHubClient() *github.Client {
+func getGitHubClient() *githubapi.Client {
 	gitHubToken := util.GetEnvParameter("GITHUB_TOKEN", true)
 	if gitHubToken == "" {
 		log.Printf("ERROR Missing GITHUB_TOKEN environment variable, quitting.")
 		os.Exit(1)
 	}
-	return githubapi.GetGitHubClient(gitHubToken)
+	return githubapi.NewClient(gitHubToken)
 }
 
 // maxRateLimitWaits caps how often processing pauses for one repo, so a rate
@@ -98,9 +97,9 @@ const maxRateLimitWaits = 3
 // requests, based on the limit reported by the API responses seen so far. It
 // quits the process if the limit is still exhausted after maxRateLimitWaits
 // pauses.
-func waitForRateLimit() {
+func waitForRateLimit(gitHubClient *githubapi.Client) {
 	for attempt := 0; attempt <= maxRateLimitWaits; attempt++ {
-		state := githubapi.CurrentRateLimit()
+		state := gitHubClient.RateLimit()
 		wait := state.WaitFor(time.Now())
 		if wait <= 0 {
 			return
@@ -119,26 +118,26 @@ func waitForRateLimit() {
 // processRemoteRepoWithRateLimit processes one repo, waiting for the rate limit
 // to reset beforehand if it is currently exhausted, and retrying the repo once
 // if it ran into the limit while being processed.
-func processRemoteRepoWithRateLimit(toolConfig config.ToolConfig, gitHubClient *github.Client, execute bool, org string, repo string) bool {
-	waitForRateLimit()
+func processRemoteRepoWithRateLimit(toolConfig config.ToolConfig, gitHubClient *githubapi.Client, execute bool, org string, repo string) bool {
+	waitForRateLimit(gitHubClient)
 	if processRemoteRepo(toolConfig, gitHubClient, execute, org, repo) {
 		return true
 	}
-	if !githubapi.CurrentRateLimit().Exhausted {
+	if !gitHubClient.RateLimit().Exhausted {
 		// failed for another reason, a retry would not help
 		return false
 	}
 	log.Printf("WARN  Repo %v ran into the rate limit, retrying after the reset.", repo)
-	waitForRateLimit()
+	waitForRateLimit(gitHubClient)
 	return processRemoteRepo(toolConfig, gitHubClient, execute, org, repo)
 }
 
-func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *github.Client, execute bool, org string, repo string) (success bool) {
+func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Client, execute bool, org string, repo string) (success bool) {
 	// find manifests
 	manifests := map[string]string{}
 
 	// get the current config and file list, from GitHub, via API
-	gitHubRepo, err := githubapi.GetRepository(gitHubClient, org, repo)
+	gitHubRepo, err := gitHubClient.GetRepository(org, repo)
 	if err != nil {
 		return false
 	}
@@ -146,7 +145,7 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *github.Client
 		log.Printf("INFO  Repository %v is archived. Nothing to do.", repo)
 		return true // not an error, just skip
 	}
-	currentConfig, err := githubapi.GetFileContent(gitHubClient, org, repo, ".github/dependabot.yml", "")
+	currentConfig, err := gitHubClient.GetFileContent(org, repo, ".github/dependabot.yml", "")
 	if err != nil {
 		if strings.Contains(err.Error(), "This repository is empty") {
 			log.Printf("INFO  Repository %v is empty. Nothing to do.", repo)
@@ -157,16 +156,16 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *github.Client
 		return false
 	}
 	baseBranch := *gitHubRepo.DefaultBranch
-	fileList := githubapi.GetRepoFileList(gitHubClient, org, repo, baseBranch)
+	fileList := gitHubClient.GetRepoFileList(org, repo, baseBranch)
 	config.ScanFileList(fileList, manifests)
 	// update the configuration and create a PR
-	loadFileParameters := config.LoadFileContentParameters{GitHubClient: gitHubClient, Org: org, Repo: repo}
-	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{GitHubClient: gitHubClient, Org: org, Repo: repo}
+	loadFileParameters := config.LoadFileContentParameters{Client: gitHubClient, Org: org, Repo: repo}
+	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{Client: gitHubClient, Org: org, Repo: repo}
 	yamlContent, changeInfo := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
 	if yamlContent != nil {
 		prDesc := githubapi.CreatePRDescription(changeInfo)
 		if execute {
-			if err := githubapi.CreateOrUpdatePullRequest(gitHubClient, org, repo, baseBranch, prDesc, string(yamlContent), toolConfig); err != nil {
+			if err := gitHubClient.CreateOrUpdatePullRequest(org, repo, baseBranch, prDesc, string(yamlContent), toolConfig); err != nil {
 				if strings.Contains(err.Error(), "pull request already exists") {
 					log.Printf("WARN  There's an open pull request already on repo %v. Close or merge it first.", repo)
 				} else if strings.Contains(err.Error(), "Resource not accessible") {

@@ -58,40 +58,40 @@ func TestRateLimitStateWaitFor(t *testing.T) {
 	}
 }
 
-func TestObserveResponse(t *testing.T) {
+func TestClientObserve(t *testing.T) {
 	reset := time.Date(2026, 8, 11, 12, 30, 0, 0, time.UTC)
 
 	t.Run("response headers are recorded", func(t *testing.T) {
-		ResetObservedRateLimit()
-		ObserveResponse(&github.Response{Rate: github.Rate{
+		c := &Client{}
+		c.observe(&github.Response{Rate: github.Rate{
 			Limit:     5000,
 			Remaining: 4200,
 			Reset:     github.Timestamp{Time: reset},
 		}}, nil)
-		state := CurrentRateLimit()
+		state := c.RateLimit()
 		if !state.Known || state.Remaining != 4200 || !state.Reset.Equal(reset) || state.Exhausted {
 			t.Errorf("unexpected state: %+v", state)
 		}
 	})
 
 	t.Run("rate limit error marks exhaustion", func(t *testing.T) {
-		ResetObservedRateLimit()
-		ObserveResponse(&github.Response{}, &github.RateLimitError{
+		c := &Client{}
+		c.observe(&github.Response{}, &github.RateLimitError{
 			Rate:     github.Rate{Limit: 5000, Remaining: 0, Reset: github.Timestamp{Time: reset}},
 			Response: &http.Response{},
 		})
-		state := CurrentRateLimit()
+		state := c.RateLimit()
 		if !state.Known || !state.Exhausted || state.Remaining != 0 || !state.Reset.Equal(reset) {
 			t.Errorf("unexpected state: %+v", state)
 		}
 	})
 
 	t.Run("secondary rate limit uses retry-after", func(t *testing.T) {
-		ResetObservedRateLimit()
+		c := &Client{}
 		retryAfter := 90 * time.Second
 		before := time.Now()
-		ObserveResponse(nil, &github.AbuseRateLimitError{RetryAfter: &retryAfter})
-		state := CurrentRateLimit()
+		c.observe(nil, &github.AbuseRateLimitError{RetryAfter: &retryAfter})
+		state := c.RateLimit()
 		if !state.Known || !state.Exhausted {
 			t.Fatalf("unexpected state: %+v", state)
 		}
@@ -101,10 +101,10 @@ func TestObserveResponse(t *testing.T) {
 	})
 
 	t.Run("secondary rate limit without retry-after falls back", func(t *testing.T) {
-		ResetObservedRateLimit()
+		c := &Client{}
 		before := time.Now()
-		ObserveResponse(nil, &github.AbuseRateLimitError{})
-		state := CurrentRateLimit()
+		c.observe(nil, &github.AbuseRateLimitError{})
+		state := c.RateLimit()
 		if !state.Exhausted {
 			t.Fatalf("unexpected state: %+v", state)
 		}
@@ -117,20 +117,20 @@ func TestObserveResponse(t *testing.T) {
 	})
 
 	t.Run("a successful response clears exhaustion", func(t *testing.T) {
-		ResetObservedRateLimit()
-		ObserveResponse(&github.Response{}, &github.RateLimitError{Response: &http.Response{}})
-		ObserveResponse(&github.Response{Rate: github.Rate{Limit: 5000, Remaining: 4999}}, nil)
-		if state := CurrentRateLimit(); state.Exhausted {
+		c := &Client{}
+		c.observe(&github.Response{}, &github.RateLimitError{Response: &http.Response{}})
+		c.observe(&github.Response{Rate: github.Rate{Limit: 5000, Remaining: 4999}}, nil)
+		if state := c.RateLimit(); state.Exhausted {
 			t.Errorf("Exhausted should have been cleared: %+v", state)
 		}
 	})
 
 	t.Run("responses without rate headers keep the previous state", func(t *testing.T) {
-		ResetObservedRateLimit()
-		ObserveResponse(&github.Response{Rate: github.Rate{Limit: 5000, Remaining: 123}}, nil)
-		ObserveResponse(nil, nil)
-		ObserveResponse(&github.Response{}, errors.New("some other failure"))
-		if state := CurrentRateLimit(); state.Remaining != 123 {
+		c := &Client{}
+		c.observe(&github.Response{Rate: github.Rate{Limit: 5000, Remaining: 123}}, nil)
+		c.observe(nil, nil)
+		c.observe(&github.Response{}, errors.New("some other failure"))
+		if state := c.RateLimit(); state.Remaining != 123 {
 			t.Errorf("Remaining = %d, want 123", state.Remaining)
 		}
 	})

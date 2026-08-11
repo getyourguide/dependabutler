@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/config"
@@ -15,21 +16,32 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// GetGitHubClient returns a GitHub client for API calls
-func GetGitHubClient(accessToken string) *github.Client {
+// Client is a GitHub API client that keeps track of the rate limit reported by
+// the responses it receives. All API calls go through it, so the rate limit
+// state is always derived from real traffic and is scoped to this client rather
+// than shared through package level state.
+type Client struct {
+	gh *github.Client
+
+	rateMutex sync.Mutex
+	rate      RateLimitState
+}
+
+// NewClient returns a GitHub API client authenticated with the given token.
+func NewClient(accessToken string) *Client {
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: accessToken},
 	)
 	tc := oauth2.NewClient(ctx, ts)
-	return github.NewClient(tc)
+	return &Client{gh: github.NewClient(tc)}
 }
 
 // GetRepository gets a repository object.
-func GetRepository(client *github.Client, org string, repo string) (*github.Repository, error) {
+func (c *Client) GetRepository(org string, repo string) (*github.Repository, error) {
 	ctx := context.Background()
-	repository, resp, err := client.Repositories.Get(ctx, org, repo)
-	ObserveResponse(resp, err)
+	repository, resp, err := c.gh.Repositories.Get(ctx, org, repo)
+	c.observe(resp, err)
 	if err != nil {
 		if strings.Contains(err.Error(), "404 Not Found") {
 			log.Printf("WARN  GitHub repo %v/%v not found.", org, repo)
@@ -42,11 +54,11 @@ func GetRepository(client *github.Client, org string, repo string) (*github.Repo
 }
 
 // GetRepoFileList returns a list (strings) of all files in a repo, including their path.
-func GetRepoFileList(client *github.Client, org string, repo string, defaultBranch string) []string {
+func (c *Client) GetRepoFileList(org string, repo string, defaultBranch string) []string {
 	// get the file tree
 	ctx := context.Background()
-	tree, resp, err := client.Git.GetTree(ctx, org, repo, defaultBranch, true)
-	ObserveResponse(resp, err)
+	tree, resp, err := c.gh.Git.GetTree(ctx, org, repo, defaultBranch, true)
+	c.observe(resp, err)
 	if err != nil {
 		log.Printf("ERROR Got error when requesting GitHub repo tree.\n%v", err)
 		return nil
@@ -59,14 +71,14 @@ func GetRepoFileList(client *github.Client, org string, repo string, defaultBran
 }
 
 // GetFileContent returns the content of a file
-func GetFileContent(client *github.Client, org string, repo string, path string, branchName string) ([]byte, error) {
+func (c *Client) GetFileContent(org string, repo string, path string, branchName string) ([]byte, error) {
 	ctx := context.Background()
 	opts := &github.RepositoryContentGetOptions{}
 	if branchName != "" {
 		opts.Ref = branchName
 	}
-	content, _, resp, err := client.Repositories.GetContents(ctx, org, repo, path, opts)
-	ObserveResponse(resp, err)
+	content, _, resp, err := c.gh.Repositories.GetContents(ctx, org, repo, path, opts)
+	c.observe(resp, err)
 	if err != nil && !strings.Contains(err.Error(), "404 Not Found") {
 		return nil, err
 	}
@@ -81,14 +93,14 @@ func GetFileContent(client *github.Client, org string, repo string, path string,
 }
 
 // CheckDirectoryExists checks if a directory exists in the remote GitHub repository.
-func CheckDirectoryExists(client *github.Client, org string, repo string, directory string, branchName string) (bool, error) {
+func (c *Client) CheckDirectoryExists(org string, repo string, directory string, branchName string) (bool, error) {
 	ctx := context.Background()
 	opts := &github.RepositoryContentGetOptions{}
 	if branchName != "" {
 		opts.Ref = branchName
 	}
-	_, dirContents, resp, err := client.Repositories.GetContents(ctx, org, repo, directory, opts)
-	ObserveResponse(resp, err)
+	_, dirContents, resp, err := c.gh.Repositories.GetContents(ctx, org, repo, directory, opts)
+	c.observe(resp, err)
 	if err != nil {
 		if strings.Contains(err.Error(), "404 Not Found") {
 			return false, nil
@@ -99,11 +111,11 @@ func CheckDirectoryExists(client *github.Client, org string, repo string, direct
 }
 
 // CreateOrUpdatePullRequest creates or updates a PR for changes in dependabot.yml
-func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
+func (c *Client) CreateOrUpdatePullRequest(org string, repo string, baseBranch string, prDesc string, content string, toolConfig config.ToolConfig) error {
 	prParams := toolConfig.PullRequestParameters
 
 	// Check if there already is a PR open, from dependabutler. If so, re-use its branch.
-	existingPr, err := getExistingPr(client, org, repo)
+	existingPr, err := c.getExistingPr(org, repo)
 	if err != nil {
 		return err
 	}
@@ -111,7 +123,7 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 	if existingPr != nil {
 		branchName = *existingPr.Head.Ref
 		// In case a PR exists, check if the file content has changed meanwhile.
-		prContent, err := GetFileContent(client, org, repo, ".github/dependabot.yml", branchName)
+		prContent, err := c.GetFileContent(org, repo, ".github/dependabot.yml", branchName)
 		if err != nil {
 			return err
 		}
@@ -127,19 +139,19 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 	}
 
 	// Get the reference (existing or new).
-	ref, err := getReference(client, org, repo, baseBranch, branchName)
+	ref, err := c.getReference(org, repo, baseBranch, branchName)
 	if err != nil {
 		return err
 	}
 
 	// Create a tree with one entry, for the commit.
-	tree, err := getTree(client, ref, org, repo, ".github/dependabot.yml", content)
+	tree, err := c.getTree(ref, org, repo, ".github/dependabot.yml", content)
 	if err != nil {
 		return err
 	}
 
 	// Push the commit.
-	err = pushCommit(client, ref, tree, org, repo, prParams.CommitMessage, prParams.AuthorName, prParams.AuthorEmail)
+	err = c.pushCommit(ref, tree, org, repo, prParams.CommitMessage, prParams.AuthorName, prParams.AuthorEmail)
 	if err != nil {
 		return err
 	}
@@ -147,8 +159,8 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 	ctx := context.Background()
 	if existingPr != nil {
 		existingPr.Body = &prDesc
-		_, resp, err := client.PullRequests.Edit(ctx, org, repo, *existingPr.Number, existingPr)
-		ObserveResponse(resp, err)
+		_, resp, err := c.gh.PullRequests.Edit(ctx, org, repo, *existingPr.Number, existingPr)
+		c.observe(resp, err)
 		if err != nil {
 			return err
 		}
@@ -160,8 +172,8 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 		newPR.Body = &prDesc
 		newPR.Head = &branchName
 		newPR.Base = &baseBranch
-		pr, resp, err := client.PullRequests.Create(ctx, org, repo, newPR)
-		ObserveResponse(resp, err)
+		pr, resp, err := c.gh.PullRequests.Create(ctx, org, repo, newPR)
+		c.observe(resp, err)
 		if err != nil {
 			return err
 		}
@@ -169,8 +181,8 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 		if len(labels) == 0 {
 			labels = []string{"dependabutler"}
 		}
-		_, resp, err = client.Issues.AddLabelsToIssue(ctx, org, repo, *pr.Number, labels)
-		ObserveResponse(resp, err)
+		_, resp, err = c.gh.Issues.AddLabelsToIssue(ctx, org, repo, *pr.Number, labels)
+		c.observe(resp, err)
 		if err != nil {
 			return err
 		}
@@ -238,39 +250,39 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 	return strings.Join(lines, "\n")
 }
 
-func getTree(client *github.Client, ref *github.Reference, org string, repo string, file string, content string) (*github.Tree, error) {
+func (c *Client) getTree(ref *github.Reference, org string, repo string, file string, content string) (*github.Tree, error) {
 	ctx := context.Background()
 	entries := []*github.TreeEntry{
 		{Path: github.String(file), Type: github.String("blob"), Content: github.String(content), Mode: github.String("100644")},
 	}
-	tree, resp, err := client.Git.CreateTree(ctx, org, repo, *ref.Object.SHA, entries)
-	ObserveResponse(resp, err)
+	tree, resp, err := c.gh.Git.CreateTree(ctx, org, repo, *ref.Object.SHA, entries)
+	c.observe(resp, err)
 	if err != nil {
 		return nil, err
 	}
 	return tree, nil
 }
 
-func getReference(client *github.Client, org string, repo string, baseBranch string, commitBranch string) (*github.Reference, error) {
+func (c *Client) getReference(org string, repo string, baseBranch string, commitBranch string) (*github.Reference, error) {
 	ctx := context.Background()
 	baseRefName := "refs/heads/" + baseBranch
 	commitRefName := "refs/heads/" + commitBranch
-	existingRef, resp, err := client.Git.GetRef(ctx, org, repo, commitRefName)
-	ObserveResponse(resp, err)
+	existingRef, resp, err := c.gh.Git.GetRef(ctx, org, repo, commitRefName)
+	c.observe(resp, err)
 	if err == nil {
 		// branch for commit already exists -> return it
 		return existingRef, nil
 	}
 	// create commit branch
 	var baseRef *github.Reference
-	baseRef, resp, err = client.Git.GetRef(ctx, org, repo, baseRefName)
-	ObserveResponse(resp, err)
+	baseRef, resp, err = c.gh.Git.GetRef(ctx, org, repo, baseRefName)
+	c.observe(resp, err)
 	if err != nil {
 		log.Printf("ERROR Could not get base branch %v of repo %v : %v\n", baseBranch, repo, err)
 		return nil, err
 	}
 	newRef := &github.Reference{Ref: github.String(commitRefName), Object: &github.GitObject{SHA: baseRef.Object.SHA}}
-	ref, _, err := client.Git.CreateRef(ctx, org, repo, newRef)
+	ref, _, err := c.gh.Git.CreateRef(ctx, org, repo, newRef)
 	if err != nil {
 		log.Printf("ERROR Could not create commit branch %v for repo %v : %v\n", commitBranch, repo, err)
 		return nil, err
@@ -278,10 +290,10 @@ func getReference(client *github.Client, org string, repo string, baseBranch str
 	return ref, nil
 }
 
-func pushCommit(client *github.Client, ref *github.Reference, tree *github.Tree, org string, repo string, commitMessage string, authorName string, authorEmail string) error {
+func (c *Client) pushCommit(ref *github.Reference, tree *github.Tree, org string, repo string, commitMessage string, authorName string, authorEmail string) error {
 	ctx := context.Background()
-	parent, resp, err := client.Repositories.GetCommit(ctx, org, repo, *ref.Object.SHA, nil)
-	ObserveResponse(resp, err)
+	parent, resp, err := c.gh.Repositories.GetCommit(ctx, org, repo, *ref.Object.SHA, nil)
+	c.observe(resp, err)
 	if err != nil {
 		return err
 	}
@@ -289,28 +301,28 @@ func pushCommit(client *github.Client, ref *github.Reference, tree *github.Tree,
 	now := time.Now()
 	author := &github.CommitAuthor{Date: &github.Timestamp{Time: now}, Name: &authorName, Email: &authorEmail}
 	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
-	newCommit, resp, err := client.Git.CreateCommit(ctx, org, repo, commit)
-	ObserveResponse(resp, err)
+	newCommit, resp, err := c.gh.Git.CreateCommit(ctx, org, repo, commit)
+	c.observe(resp, err)
 	if err != nil {
 		return err
 	}
 	ref.Object.SHA = newCommit.SHA
-	_, resp, err = client.Git.UpdateRef(ctx, org, repo, ref, false)
-	ObserveResponse(resp, err)
+	_, resp, err = c.gh.Git.UpdateRef(ctx, org, repo, ref, false)
+	c.observe(resp, err)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func getExistingPr(client *github.Client, org string, repo string) (*github.PullRequest, error) {
+func (c *Client) getExistingPr(org string, repo string) (*github.PullRequest, error) {
 	ctx := context.Background()
 	opts := github.IssueListByRepoOptions{
 		State:  "open",
 		Labels: []string{"dependabutler"},
 	}
-	issues, resp, err := client.Issues.ListByRepo(ctx, org, repo, &opts)
-	ObserveResponse(resp, err)
+	issues, resp, err := c.gh.Issues.ListByRepo(ctx, org, repo, &opts)
+	c.observe(resp, err)
 	if err != nil {
 		return nil, err
 	}
@@ -322,8 +334,8 @@ func getExistingPr(client *github.Client, org string, repo string) (*github.Pull
 		}
 	}
 	if existingPrIssue != nil {
-		existingPr, resp, err := client.PullRequests.Get(ctx, org, repo, *existingPrIssue.Number)
-		ObserveResponse(resp, err)
+		existingPr, resp, err := c.gh.PullRequests.Get(ctx, org, repo, *existingPrIssue.Number)
+		c.observe(resp, err)
 		if err != nil {
 			return nil, err
 		}
