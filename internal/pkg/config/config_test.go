@@ -122,7 +122,7 @@ pull-request-parameters:
 			&ToolConfig{
 				PullRequestParameters: PullRequestParameters{
 					AuthorName: "dependabutler",
-					PRLabels:   []string{"dependabutler", "automerge"},
+					PRLabels:   []string{"dependabutler"},
 				},
 			},
 		},
