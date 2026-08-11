@@ -28,7 +28,8 @@ func GetGitHubClient(accessToken string) *github.Client {
 // GetRepository gets a repository object.
 func GetRepository(client *github.Client, org string, repo string) (*github.Repository, error) {
 	ctx := context.Background()
-	repository, _, err := client.Repositories.Get(ctx, org, repo)
+	repository, resp, err := client.Repositories.Get(ctx, org, repo)
+	ObserveResponse(resp, err)
 	if err != nil {
 		if strings.Contains(err.Error(), "404 Not Found") {
 			log.Printf("WARN  GitHub repo %v/%v not found.", org, repo)
@@ -44,7 +45,8 @@ func GetRepository(client *github.Client, org string, repo string) (*github.Repo
 func GetRepoFileList(client *github.Client, org string, repo string, defaultBranch string) []string {
 	// get the file tree
 	ctx := context.Background()
-	tree, _, err := client.Git.GetTree(ctx, org, repo, defaultBranch, true)
+	tree, resp, err := client.Git.GetTree(ctx, org, repo, defaultBranch, true)
+	ObserveResponse(resp, err)
 	if err != nil {
 		log.Printf("ERROR Got error when requesting GitHub repo tree.\n%v", err)
 		return nil
@@ -63,7 +65,8 @@ func GetFileContent(client *github.Client, org string, repo string, path string,
 	if branchName != "" {
 		opts.Ref = branchName
 	}
-	content, _, _, err := client.Repositories.GetContents(ctx, org, repo, path, opts)
+	content, _, resp, err := client.Repositories.GetContents(ctx, org, repo, path, opts)
+	ObserveResponse(resp, err)
 	if err != nil && !strings.Contains(err.Error(), "404 Not Found") {
 		return nil, err
 	}
@@ -84,7 +87,8 @@ func CheckDirectoryExists(client *github.Client, org string, repo string, direct
 	if branchName != "" {
 		opts.Ref = branchName
 	}
-	_, dirContents, _, err := client.Repositories.GetContents(ctx, org, repo, directory, opts)
+	_, dirContents, resp, err := client.Repositories.GetContents(ctx, org, repo, directory, opts)
+	ObserveResponse(resp, err)
 	if err != nil {
 		if strings.Contains(err.Error(), "404 Not Found") {
 			return false, nil
@@ -228,18 +232,6 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 	lines = append(lines, "#### note")
 	lines = append(lines, "* Check the default settings applied (schedule, open-pull-requests-limit, etc.) and change if required.")
 	return strings.Join(lines, "\n")
-}
-
-// CheckRateLimit checks if there are enough GitHub API requests remaining.
-func CheckRateLimit(client *github.Client, minRemaining int) (bool, int, error) {
-	ctx := context.Background()
-	rateLimits, _, err := client.RateLimits(ctx)
-	if err != nil {
-		return false, 0, err
-	}
-
-	remaining := rateLimits.Core.Remaining
-	return remaining >= minRemaining, remaining, nil
 }
 
 func getTree(client *github.Client, ref *github.Reference, org string, repo string, file string, content string) (*github.Tree, error) {

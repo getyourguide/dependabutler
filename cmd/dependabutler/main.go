@@ -92,30 +92,46 @@ func getGitHubClient() *github.Client {
 	return githubapi.GetGitHubClient(gitHubToken)
 }
 
-// ensureRateLimit ensures there are enough remaining GitHub API requests by waiting if necessary
-// Returns true if rate limit is sufficient, false if max retries exceeded
-func ensureRateLimit(client *github.Client, minRemaining int) bool {
-	const maxRetries = 20
-	const waitDuration = 5 * time.Minute
+// maxRateLimitWaits caps how often processing pauses for one repo, so a rate
+// limit that never resets cannot stall a run indefinitely.
+const maxRateLimitWaits = 3
 
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		hasEnough, remaining, err := githubapi.CheckRateLimit(client, minRemaining)
-		if err != nil {
-			log.Printf("ERROR Failed to check rate limit: %v", err)
-			return false
+// waitForRateLimit pauses until the GitHub API rate limit allows further
+// requests, based on what real API responses reported. It quits the process if
+// the limit is still not satisfied after maxRateLimitWaits pauses.
+func waitForRateLimit(minRemaining int) {
+	for attempt := 0; attempt <= maxRateLimitWaits; attempt++ {
+		state := githubapi.CurrentRateLimit()
+		wait := state.WaitFor(minRemaining, time.Now())
+		if wait <= 0 {
+			return
 		}
-
-		if hasEnough {
-			return true
+		if attempt == maxRateLimitWaits {
+			break
 		}
-
-		log.Printf("WARN  Rate limit too low (%d remaining, need %d). Waiting 5 minutes (attempt %d/%d)...",
-			remaining, minRemaining, attempt, maxRetries)
-		time.Sleep(waitDuration)
+		log.Printf("WARN  Rate limit reached (%d remaining), waiting %v for the reset at %v (attempt %d/%d)...",
+			state.Remaining, wait.Round(time.Second), state.Reset.UTC().Format(time.RFC3339), attempt+1, maxRateLimitWaits)
+		time.Sleep(wait)
 	}
+	log.Printf("ERROR Rate limit still exhausted after %d waits, quitting.", maxRateLimitWaits)
+	os.Exit(1)
+}
 
-	log.Printf("ERROR Rate limit still too low after %d attempts", maxRetries)
-	return false
+// processRemoteRepoWithRateLimit processes one repo, pausing beforehand if the
+// observed rate limit is below the buffer, and retrying the repo once if the
+// limit was hit while it was being processed.
+func processRemoteRepoWithRateLimit(toolConfig config.ToolConfig, gitHubClient *github.Client, execute bool, org string, repo string, rateLimitBuffer int) bool {
+	waitForRateLimit(rateLimitBuffer)
+	if processRemoteRepo(toolConfig, gitHubClient, execute, org, repo) {
+		return true
+	}
+	if !githubapi.CurrentRateLimit().Exhausted {
+		// failed for another reason, a retry would not help
+		return false
+	}
+	log.Printf("WARN  Repo %v ran into the rate limit, retrying after the reset.", repo)
+	waitForRateLimit(rateLimitBuffer)
+	return processRemoteRepo(toolConfig, gitHubClient, execute, org, repo)
 }
 
 func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *github.Client, execute bool, org string, repo string) (success bool) {
@@ -239,19 +255,12 @@ func main() {
 		gitHubClient := getGitHubClient()
 
 		if repo != "" {
-			if !processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo) {
+			if !processRemoteRepoWithRateLimit(*toolConfig, gitHubClient, execute, org, repo, rateLimitBuffer) {
 				failureCount++
 			}
 		} else if repoFile != "" {
 			for _, repo := range util.ReadLinesFromFile(repoFile) {
-				// Check rate limit before processing each repo if enabled
-				if rateLimitBuffer > 0 {
-					if !ensureRateLimit(gitHubClient, rateLimitBuffer) {
-						log.Printf("ERROR Rate limit check failed, exiting")
-						os.Exit(1)
-					}
-				}
-				if !processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo) {
+				if !processRemoteRepoWithRateLimit(*toolConfig, gitHubClient, execute, org, repo, rateLimitBuffer) {
 					failureCount++
 				}
 			}
