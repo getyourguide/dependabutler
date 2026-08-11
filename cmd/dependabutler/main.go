@@ -57,7 +57,7 @@ func showUsageAndExit() {
 	os.Exit(1)
 }
 
-func getParameters() (string, string, bool, string, string, string, string, int) {
+func getParameters() (string, string, bool, string, string, string, string) {
 	var mode, dir, repo, repoFile, org, configFile string
 	var execute bool
 	var rateLimitBuffer int
@@ -68,8 +68,12 @@ func getParameters() (string, string, bool, string, string, string, string, int)
 	flag.StringVar(&org, "org", "", "org/owner name, required for mode=remote")
 	flag.StringVar(&repo, "repo", "", "repository name, for mode=remote")
 	flag.StringVar(&repoFile, "repoFile", "", "file containing repo list (one per line), for mode=remote")
-	flag.IntVar(&rateLimitBuffer, "rateLimitBuffer", 0, "safety buffer for GitHub API rate limits. Pauses when remaining requests drop below this number. 0=disabled.")
+	flag.IntVar(&rateLimitBuffer, "rateLimitBuffer", 0, "deprecated and ignored; rate limits are handled automatically")
 	flag.Parse()
+	if rateLimitBuffer != 0 {
+		// still accepted so existing pipelines keep working, see CHANGELOG v0.9.5
+		log.Printf("WARN  -rateLimitBuffer is deprecated and ignored. Rate limits are now handled automatically.")
+	}
 	switch mode {
 	case "local":
 		break
@@ -80,7 +84,7 @@ func getParameters() (string, string, bool, string, string, string, string, int)
 	default:
 		showUsageAndExit()
 	}
-	return mode, configFile, execute, dir, org, repo, repoFile, rateLimitBuffer
+	return mode, configFile, execute, dir, org, repo, repoFile
 }
 
 func getGitHubClient() *github.Client {
@@ -97,31 +101,32 @@ func getGitHubClient() *github.Client {
 const maxRateLimitWaits = 3
 
 // waitForRateLimit pauses until the GitHub API rate limit allows further
-// requests, based on what real API responses reported. It quits the process if
-// the limit is still not satisfied after maxRateLimitWaits pauses.
-func waitForRateLimit(minRemaining int) {
+// requests, based on the limit reported by the API responses seen so far. It
+// quits the process if the limit is still exhausted after maxRateLimitWaits
+// pauses.
+func waitForRateLimit() {
 	for attempt := 0; attempt <= maxRateLimitWaits; attempt++ {
 		state := githubapi.CurrentRateLimit()
-		wait := state.WaitFor(minRemaining, time.Now())
+		wait := state.WaitFor(time.Now())
 		if wait <= 0 {
 			return
 		}
 		if attempt == maxRateLimitWaits {
 			break
 		}
-		log.Printf("WARN  Rate limit reached (%d remaining), waiting %v for the reset at %v (attempt %d/%d)...",
-			state.Remaining, wait.Round(time.Second), state.Reset.UTC().Format(time.RFC3339), attempt+1, maxRateLimitWaits)
+		log.Printf("WARN  Rate limit reached, waiting %v for the reset at %v (attempt %d/%d)...",
+			wait.Round(time.Second), state.Reset.UTC().Format(time.RFC3339), attempt+1, maxRateLimitWaits)
 		time.Sleep(wait)
 	}
 	log.Printf("ERROR Rate limit still exhausted after %d waits, quitting.", maxRateLimitWaits)
 	os.Exit(1)
 }
 
-// processRemoteRepoWithRateLimit processes one repo, pausing beforehand if the
-// observed rate limit is below the buffer, and retrying the repo once if the
-// limit was hit while it was being processed.
-func processRemoteRepoWithRateLimit(toolConfig config.ToolConfig, gitHubClient *github.Client, execute bool, org string, repo string, rateLimitBuffer int) bool {
-	waitForRateLimit(rateLimitBuffer)
+// processRemoteRepoWithRateLimit processes one repo, waiting for the rate limit
+// to reset beforehand if it is currently exhausted, and retrying the repo once
+// if it ran into the limit while being processed.
+func processRemoteRepoWithRateLimit(toolConfig config.ToolConfig, gitHubClient *github.Client, execute bool, org string, repo string) bool {
+	waitForRateLimit()
 	if processRemoteRepo(toolConfig, gitHubClient, execute, org, repo) {
 		return true
 	}
@@ -130,7 +135,7 @@ func processRemoteRepoWithRateLimit(toolConfig config.ToolConfig, gitHubClient *
 		return false
 	}
 	log.Printf("WARN  Repo %v ran into the rate limit, retrying after the reset.", repo)
-	waitForRateLimit(rateLimitBuffer)
+	waitForRateLimit()
 	return processRemoteRepo(toolConfig, gitHubClient, execute, org, repo)
 }
 
@@ -227,7 +232,7 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) (s
 
 func main() {
 	// get parameters
-	mode, configFile, execute, dir, org, repo, repoFile, rateLimitBuffer := getParameters()
+	mode, configFile, execute, dir, org, repo, repoFile := getParameters()
 
 	// read and parse config file, and initialize the patterns
 	fileContent, err := util.ReadFile(configFile)
@@ -255,12 +260,12 @@ func main() {
 		gitHubClient := getGitHubClient()
 
 		if repo != "" {
-			if !processRemoteRepoWithRateLimit(*toolConfig, gitHubClient, execute, org, repo, rateLimitBuffer) {
+			if !processRemoteRepoWithRateLimit(*toolConfig, gitHubClient, execute, org, repo) {
 				failureCount++
 			}
 		} else if repoFile != "" {
 			for _, repo := range util.ReadLinesFromFile(repoFile) {
-				if !processRemoteRepoWithRateLimit(*toolConfig, gitHubClient, execute, org, repo, rateLimitBuffer) {
+				if !processRemoteRepoWithRateLimit(*toolConfig, gitHubClient, execute, org, repo) {
 					failureCount++
 				}
 			}

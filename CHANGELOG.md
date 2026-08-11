@@ -115,3 +115,6 @@ Initial version.
   headers of real API responses instead of the `GET /rate_limit` endpoint, which was observed reporting an unused
   budget while the enforced counter had already been spent. The tool now waits until the reported reset time rather
   than sleeping blindly, and retries a repository once if it ran into the limit while being processed.
+- Deprecated the `rateLimitBuffer` parameter. Rate limits no longer need to be configured, so the value is ignored;
+  the flag is still accepted, and a warning is logged when a non-zero value is passed, so existing pipelines keep
+  working unchanged.

@@ -14,63 +14,44 @@ func TestRateLimitStateWaitFor(t *testing.T) {
 	resetIn10m := now.Add(10 * time.Minute)
 
 	tests := []struct {
-		name         string
-		state        RateLimitState
-		minRemaining int
-		want         time.Duration
+		name  string
+		state RateLimitState
+		want  time.Duration
 	}{
 		{
-			name:         "nothing observed yet",
-			state:        RateLimitState{},
-			minRemaining: 100,
-			want:         0,
+			name:  "nothing observed yet",
+			state: RateLimitState{},
+			want:  0,
 		},
 		{
-			name:         "plenty remaining",
-			state:        RateLimitState{Known: true, Remaining: 4000, Reset: resetIn10m},
-			minRemaining: 100,
-			want:         0,
+			name:  "requests still available",
+			state: RateLimitState{Known: true, Remaining: 4000, Reset: resetIn10m},
+			want:  0,
 		},
 		{
-			name:         "below the buffer waits for the reset",
-			state:        RateLimitState{Known: true, Remaining: 99, Reset: resetIn10m},
-			minRemaining: 100,
-			want:         10*time.Minute + resetGrace,
+			name:  "a low but working limit is not waited for",
+			state: RateLimitState{Known: true, Remaining: 3, Reset: resetIn10m},
+			want:  0,
 		},
 		{
-			name:         "exactly at the buffer does not wait",
-			state:        RateLimitState{Known: true, Remaining: 100, Reset: resetIn10m},
-			minRemaining: 100,
-			want:         0,
+			name:  "exhausted waits for the reset",
+			state: RateLimitState{Known: true, Remaining: 0, Reset: resetIn10m, Exhausted: true},
+			want:  10*time.Minute + resetGrace,
 		},
 		{
-			name:         "buffer disabled still waits once exhausted",
-			state:        RateLimitState{Known: true, Remaining: 0, Reset: resetIn10m, Exhausted: true},
-			minRemaining: 0,
-			want:         10*time.Minute + resetGrace,
+			name:  "reset already passed",
+			state: RateLimitState{Known: true, Remaining: 0, Reset: now.Add(-time.Minute), Exhausted: true},
+			want:  0,
 		},
 		{
-			name:         "buffer disabled ignores a low but working limit",
-			state:        RateLimitState{Known: true, Remaining: 3, Reset: resetIn10m},
-			minRemaining: 0,
-			want:         0,
-		},
-		{
-			name:         "reset already passed",
-			state:        RateLimitState{Known: true, Remaining: 0, Reset: now.Add(-time.Minute), Exhausted: true},
-			minRemaining: 100,
-			want:         0,
-		},
-		{
-			name:         "exhausted without a known reset",
-			state:        RateLimitState{Known: true, Exhausted: true},
-			minRemaining: 100,
-			want:         0,
+			name:  "exhausted without a known reset",
+			state: RateLimitState{Known: true, Exhausted: true},
+			want:  0,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := test.state.WaitFor(test.minRemaining, now); got != test.want {
+			if got := test.state.WaitFor(now); got != test.want {
 				t.Errorf("WaitFor() = %v, want %v", got, test.want)
 			}
 		})

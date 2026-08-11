@@ -147,7 +147,9 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 	ctx := context.Background()
 	if existingPr != nil {
 		existingPr.Body = &prDesc
-		if _, _, err := client.PullRequests.Edit(ctx, org, repo, *existingPr.Number, existingPr); err != nil {
+		_, resp, err := client.PullRequests.Edit(ctx, org, repo, *existingPr.Number, existingPr)
+		ObserveResponse(resp, err)
+		if err != nil {
 			return err
 		}
 		log.Printf("INFO  PR successfully updated: %s\n", existingPr.GetHTMLURL())
@@ -158,7 +160,8 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 		newPR.Body = &prDesc
 		newPR.Head = &branchName
 		newPR.Base = &baseBranch
-		pr, _, err := client.PullRequests.Create(ctx, org, repo, newPR)
+		pr, resp, err := client.PullRequests.Create(ctx, org, repo, newPR)
+		ObserveResponse(resp, err)
 		if err != nil {
 			return err
 		}
@@ -166,7 +169,8 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 		if len(labels) == 0 {
 			labels = []string{"dependabutler"}
 		}
-		_, _, err = client.Issues.AddLabelsToIssue(ctx, org, repo, *pr.Number, labels)
+		_, resp, err = client.Issues.AddLabelsToIssue(ctx, org, repo, *pr.Number, labels)
+		ObserveResponse(resp, err)
 		if err != nil {
 			return err
 		}
@@ -239,7 +243,8 @@ func getTree(client *github.Client, ref *github.Reference, org string, repo stri
 	entries := []*github.TreeEntry{
 		{Path: github.String(file), Type: github.String("blob"), Content: github.String(content), Mode: github.String("100644")},
 	}
-	tree, _, err := client.Git.CreateTree(ctx, org, repo, *ref.Object.SHA, entries)
+	tree, resp, err := client.Git.CreateTree(ctx, org, repo, *ref.Object.SHA, entries)
+	ObserveResponse(resp, err)
 	if err != nil {
 		return nil, err
 	}
@@ -250,13 +255,16 @@ func getReference(client *github.Client, org string, repo string, baseBranch str
 	ctx := context.Background()
 	baseRefName := "refs/heads/" + baseBranch
 	commitRefName := "refs/heads/" + commitBranch
-	if ref, _, err := client.Git.GetRef(ctx, org, repo, commitRefName); err == nil {
+	existingRef, resp, err := client.Git.GetRef(ctx, org, repo, commitRefName)
+	ObserveResponse(resp, err)
+	if err == nil {
 		// branch for commit already exists -> return it
-		return ref, nil
+		return existingRef, nil
 	}
 	// create commit branch
 	var baseRef *github.Reference
-	baseRef, _, err := client.Git.GetRef(ctx, org, repo, baseRefName)
+	baseRef, resp, err = client.Git.GetRef(ctx, org, repo, baseRefName)
+	ObserveResponse(resp, err)
 	if err != nil {
 		log.Printf("ERROR Could not get base branch %v of repo %v : %v\n", baseBranch, repo, err)
 		return nil, err
@@ -272,7 +280,8 @@ func getReference(client *github.Client, org string, repo string, baseBranch str
 
 func pushCommit(client *github.Client, ref *github.Reference, tree *github.Tree, org string, repo string, commitMessage string, authorName string, authorEmail string) error {
 	ctx := context.Background()
-	parent, _, err := client.Repositories.GetCommit(ctx, org, repo, *ref.Object.SHA, nil)
+	parent, resp, err := client.Repositories.GetCommit(ctx, org, repo, *ref.Object.SHA, nil)
+	ObserveResponse(resp, err)
 	if err != nil {
 		return err
 	}
@@ -280,12 +289,14 @@ func pushCommit(client *github.Client, ref *github.Reference, tree *github.Tree,
 	now := time.Now()
 	author := &github.CommitAuthor{Date: &github.Timestamp{Time: now}, Name: &authorName, Email: &authorEmail}
 	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
-	newCommit, _, err := client.Git.CreateCommit(ctx, org, repo, commit)
+	newCommit, resp, err := client.Git.CreateCommit(ctx, org, repo, commit)
+	ObserveResponse(resp, err)
 	if err != nil {
 		return err
 	}
 	ref.Object.SHA = newCommit.SHA
-	_, _, err = client.Git.UpdateRef(ctx, org, repo, ref, false)
+	_, resp, err = client.Git.UpdateRef(ctx, org, repo, ref, false)
+	ObserveResponse(resp, err)
 	if err != nil {
 		return err
 	}
@@ -298,7 +309,8 @@ func getExistingPr(client *github.Client, org string, repo string) (*github.Pull
 		State:  "open",
 		Labels: []string{"dependabutler"},
 	}
-	issues, _, err := client.Issues.ListByRepo(ctx, org, repo, &opts)
+	issues, resp, err := client.Issues.ListByRepo(ctx, org, repo, &opts)
+	ObserveResponse(resp, err)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +322,8 @@ func getExistingPr(client *github.Client, org string, repo string) (*github.Pull
 		}
 	}
 	if existingPrIssue != nil {
-		existingPr, _, err := client.PullRequests.Get(ctx, org, repo, *existingPrIssue.Number)
+		existingPr, resp, err := client.PullRequests.Get(ctx, org, repo, *existingPrIssue.Number)
+		ObserveResponse(resp, err)
 		if err != nil {
 			return nil, err
 		}

@@ -33,14 +33,11 @@ type RateLimitState struct {
 }
 
 // WaitFor returns how long to pause before the next API request, or zero if no
-// pause is needed: nothing observed yet, enough requests left, or a reset that
-// has already passed. minRemaining is a safety buffer; zero or less pauses only
-// once the limit has actually been hit.
-func (s RateLimitState) WaitFor(minRemaining int, now time.Time) time.Duration {
-	if !s.Known {
-		return 0
-	}
-	if !s.Exhausted && (minRemaining <= 0 || s.Remaining >= minRemaining) {
+// pause is needed: the limit has not been reached, or its reset has already
+// passed. No safety buffer is needed, because every API call reports the limit
+// it saw, so exhaustion is noticed as soon as it happens.
+func (s RateLimitState) WaitFor(now time.Time) time.Duration {
+	if !s.Exhausted {
 		return 0
 	}
 	if !s.Reset.After(now) {
