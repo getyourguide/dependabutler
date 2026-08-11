@@ -6,9 +6,6 @@
 
 Automatically create or update the `dependabot.yml` config file of GitHub repositories, based on manifest files present.
 
-> `dependabutler` is a **Work In Progress** project.
-
-
 
 ## Installation
 
@@ -82,13 +79,8 @@ Examples:
 If you're interested in contributing to this project or running a dev version, have a look into the [CONTRIBUTING](CONTRIBUTING.md) document.
 
 
-## Security
-
-For sensitive security matters please contact [security@getyourguide.com](mailto:security@getyourguide.com).
-
-
 ## Legal
 
-Copyright 2025 GetYourGuide GmbH.
+Copyright 2026 GetYourGuide GmbH.
 
 dependabutler is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full text.
