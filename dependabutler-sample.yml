@@ -85,6 +85,9 @@ pull-request-parameters:
   branch-name: "dependabutler-update"
   branch-name-random-suffix: true
   sleep-after-pr-action: 2
+  # labels applied to PRs created by dependabutler; defaults to [dependabutler] if omitted
+  pr-labels:
+    - dependabutler
 
 #
 # feature flags
