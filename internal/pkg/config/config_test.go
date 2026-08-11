@@ -117,7 +117,6 @@ pull-request-parameters:
   author-name: dependabutler
   pr-labels:
     - dependabutler
-    - automerge
 `,
 			&ToolConfig{
 				PullRequestParameters: PullRequestParameters{
