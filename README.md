@@ -1,7 +1,5 @@
 # dependabutler
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/getyourguide/dependabutler)](https://goreportcard.com/report/github.com/getyourguide/dependabutler)
-
 <img alt="dependabutler logo" src="dependabutler.png" style="width:48px"/>
 
 Automatically create or update the `dependabot.yml` config file of GitHub repositories, based on manifest files present.
