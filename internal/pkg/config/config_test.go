@@ -111,6 +111,20 @@ update-defaults:
 				},
 			},
 		},
+		{
+			`
+pull-request-parameters:
+  author-name: dependabutler
+  pr-labels:
+    - dependabutler
+`,
+			&ToolConfig{
+				PullRequestParameters: PullRequestParameters{
+					AuthorName: "dependabutler",
+					PRLabels:   []string{"dependabutler"},
+				},
+			},
+		},
 	} {
 		got, err := ParseToolConfig([]byte(tt.configString))
 		if err != nil {

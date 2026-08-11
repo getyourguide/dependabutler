@@ -104,3 +104,7 @@ Initial version.
 - Added error handling to exit with status code 1 when errors occur during processing, ensuring GitHub Actions can detect failures.
 - Added throttling mechanism for GitHub API calls with new `rateLimitBuffer` CLI parameter to prevent silent failures due to rate limit exhaustion.
 - Migrated from unmaintained `gopkg.in/yaml.v3` to actively maintained `github.com/goccy/go-yaml` library, fixing emoji corruption issues.
+
+## v0.9.4
+
+- Added config parameter `pr-labels` to control the labels applied to PRs created by dependabutler (defaults to `dependabutler`).

@@ -52,13 +52,14 @@ type DefaultRegistries map[string]DefaultRegistry
 
 // PullRequestParameters holds the parameters for PRs created by dependabutler
 type PullRequestParameters struct {
-	AuthorName             string `yaml:"author-name"`
-	AuthorEmail            string `yaml:"author-email"`
-	CommitMessage          string `yaml:"commit-message"`
-	PRTitle                string `yaml:"pr-title"`
-	BranchName             string `yaml:"branch-name"`
-	BranchNameRandomSuffix bool   `yaml:"branch-name-random-suffix"`
-	SleepAfterPRAction     int    `yaml:"sleep-after-pr-action"`
+	AuthorName             string   `yaml:"author-name"`
+	AuthorEmail            string   `yaml:"author-email"`
+	CommitMessage          string   `yaml:"commit-message"`
+	PRTitle                string   `yaml:"pr-title"`
+	BranchName             string   `yaml:"branch-name"`
+	BranchNameRandomSuffix bool     `yaml:"branch-name-random-suffix"`
+	SleepAfterPRAction     int      `yaml:"sleep-after-pr-action"`
+	PRLabels               []string `yaml:"pr-labels,omitempty"`
 }
 
 // DefaultRegistry holds the config items of a default registry

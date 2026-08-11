@@ -158,7 +158,10 @@ func CreateOrUpdatePullRequest(client *github.Client, org string, repo string, b
 		if err != nil {
 			return err
 		}
-		labels := []string{"dependabutler"}
+		labels := prParams.PRLabels
+		if len(labels) == 0 {
+			labels = []string{"dependabutler"}
+		}
 		_, _, err = client.Issues.AddLabelsToIssue(ctx, org, repo, *pr.Number, labels)
 		if err != nil {
 			return err
