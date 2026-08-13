@@ -56,6 +56,15 @@ func showUsageAndExit() {
 	os.Exit(1)
 }
 
+// sanitizeRepoName strips line breaks from a user-provided repository name.
+// Line breaks are not valid in GitHub repository names, and removing them makes
+// sure a crafted name cannot forge additional log entries when it is logged
+// (CodeQL: go/log-injection).
+func sanitizeRepoName(repo string) string {
+	repo = strings.ReplaceAll(repo, "\n", "")
+	return strings.ReplaceAll(repo, "\r", "")
+}
+
 func getParameters() (string, string, bool, string, string, string, string) {
 	var mode, dir, repo, repoFile, org, configFile string
 	var execute bool
@@ -83,7 +92,7 @@ func getParameters() (string, string, bool, string, string, string, string) {
 	default:
 		showUsageAndExit()
 	}
-	return mode, configFile, execute, dir, org, repo, repoFile
+	return mode, configFile, execute, dir, org, sanitizeRepoName(repo), repoFile
 }
 
 func getGitHubClient() *githubapi.Client {
@@ -263,7 +272,7 @@ func main() {
 			}
 		} else if repoFile != "" {
 			for _, repo := range util.ReadLinesFromFile(repoFile) {
-				if !processRemoteRepoWithRateLimit(*toolConfig, gitHubClient, execute, org, repo) {
+				if !processRemoteRepoWithRateLimit(*toolConfig, gitHubClient, execute, org, sanitizeRepoName(repo)) {
 					failureCount++
 				}
 			}
