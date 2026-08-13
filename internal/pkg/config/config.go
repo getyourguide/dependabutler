@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
-	"github.com/google/go-github/v50/github"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -197,20 +196,29 @@ type UpdateInfo struct {
 	File      string
 }
 
+// RemoteClient is the GitHub API client used by the remote LoadFileContent and
+// CheckDirectoryExists implementations. It is declared here, as the interface
+// this package needs, so that this package does not have to import the package
+// implementing it - which imports this one.
+type RemoteClient interface {
+	GetFileContent(org string, repo string, path string, branchName string) ([]byte, error)
+	CheckDirectoryExists(org string, repo string, directory string, branchName string) (bool, error)
+}
+
 // LoadFileContentParameters holds all parameters needed for the LoadFileContent function implementations.
 type LoadFileContentParameters struct {
-	GitHubClient *github.Client
-	Org          string
-	Repo         string
-	Directory    string
+	Client    RemoteClient
+	Org       string
+	Repo      string
+	Directory string
 }
 
 // CheckDirectoryExistsParameters holds all parameters needed for the CheckDirectoryExists function implementations.
 type CheckDirectoryExistsParameters struct {
-	GitHubClient *github.Client
-	Org          string
-	Repo         string
-	Directory    string
+	Client    RemoteClient
+	Org       string
+	Repo      string
+	Directory string
 }
 
 // KeyValue holds a key/value pair of strings. Used as a sortable key/value map.

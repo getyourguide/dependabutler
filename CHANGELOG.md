@@ -108,3 +108,16 @@ Initial version.
 ## v0.9.4
 
 - Added config parameter `pr-labels` to control the labels applied to PRs created by dependabutler (defaults to `dependabutler`).
+
+## v0.9.5
+
+- Fixed the API throttling introduced in v0.9.0: the remaining rate limit is now taken from the `X-RateLimit-*`
+  headers of real API responses instead of the `GET /rate_limit` endpoint, which was observed reporting an unused
+  budget while the enforced counter had already been spent. The tool now waits until the reported reset time rather
+  than sleeping blindly, and retries a repository once if it ran into the limit while being processed. When a
+  response reports the budget as fully used, the tool pauses proactively instead of running into the rejection.
+- Upgraded `go-github` from v50 to v90. Among other fixes, the old version did not recognize rate limit rejections
+  with HTTP status 429, which GitHub can return for both primary and secondary limits.
+- Deprecated the `rateLimitBuffer` parameter: rate limits no longer need to be configured. The flag is still
+  accepted so existing callers keep working, but it has no effect (a warning is logged) and will be removed in a
+  future release.

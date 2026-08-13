@@ -1,0 +1,157 @@
+package githubapi
+
+import (
+	"errors"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/google/go-github/v90/github"
+)
+
+func TestRateLimitStateWaitFor(t *testing.T) {
+	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
+	resetIn10m := now.Add(10 * time.Minute)
+
+	tests := []struct {
+		name  string
+		state RateLimitState
+		want  time.Duration
+	}{
+		{
+			name:  "nothing observed yet",
+			state: RateLimitState{},
+			want:  0,
+		},
+		{
+			name:  "requests still available",
+			state: RateLimitState{Known: true, Remaining: 4000, Reset: resetIn10m},
+			want:  0,
+		},
+		{
+			name:  "a low but working limit is not waited for",
+			state: RateLimitState{Known: true, Remaining: 3, Reset: resetIn10m},
+			want:  0,
+		},
+		{
+			name:  "exhausted waits for the reset",
+			state: RateLimitState{Known: true, Remaining: 0, Reset: resetIn10m, Exhausted: true},
+			want:  10*time.Minute + resetGrace,
+		},
+		{
+			name:  "reset already passed",
+			state: RateLimitState{Known: true, Remaining: 0, Reset: now.Add(-time.Minute), Exhausted: true},
+			want:  0,
+		},
+		{
+			name:  "bogus reset far in the future is capped",
+			state: RateLimitState{Known: true, Remaining: 0, Reset: now.Add(48 * time.Hour), Exhausted: true},
+			want:  maxWait,
+		},
+		{
+			name:  "exhausted without a known reset",
+			state: RateLimitState{Known: true, Exhausted: true},
+			want:  0,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.state.WaitFor(now); got != test.want {
+				t.Errorf("WaitFor() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestClientObserve(t *testing.T) {
+	reset := time.Date(2026, 8, 11, 12, 30, 0, 0, time.UTC)
+
+	t.Run("response headers are recorded", func(t *testing.T) {
+		client := &Client{}
+		client.observe(&github.Response{Rate: github.Rate{
+			Limit:     5000,
+			Remaining: 4200,
+			Reset:     github.Timestamp{Time: reset},
+		}}, nil)
+		state := client.RateLimit()
+		if !state.Known || state.Remaining != 4200 || !state.Reset.Equal(reset) || state.Exhausted {
+			t.Errorf("unexpected state: %+v", state)
+		}
+	})
+
+	t.Run("an empty budget marks exhaustion even without a rate limit error", func(t *testing.T) {
+		// This is what a 429 rejection looks like when go-github does not
+		// classify it: a generic error, with the limit visible in the headers.
+		client := &Client{}
+		client.observe(&github.Response{Rate: github.Rate{
+			Limit:     5000,
+			Remaining: 0,
+			Reset:     github.Timestamp{Time: reset},
+		}}, errors.New("429 Too Many Requests"))
+		state := client.RateLimit()
+		if !state.Exhausted || !state.Reset.Equal(reset) {
+			t.Errorf("unexpected state: %+v", state)
+		}
+	})
+
+	t.Run("rate limit error marks exhaustion", func(t *testing.T) {
+		client := &Client{}
+		client.observe(&github.Response{}, &github.RateLimitError{
+			Rate:     github.Rate{Limit: 5000, Remaining: 0, Reset: github.Timestamp{Time: reset}},
+			Response: &http.Response{},
+		})
+		state := client.RateLimit()
+		if !state.Known || !state.Exhausted || state.Remaining != 0 || !state.Reset.Equal(reset) {
+			t.Errorf("unexpected state: %+v", state)
+		}
+	})
+
+	t.Run("secondary rate limit uses retry-after", func(t *testing.T) {
+		client := &Client{}
+		retryAfter := 90 * time.Second
+		before := time.Now()
+		client.observe(nil, &github.AbuseRateLimitError{RetryAfter: &retryAfter})
+		state := client.RateLimit()
+		if !state.Known || !state.Exhausted {
+			t.Fatalf("unexpected state: %+v", state)
+		}
+		if state.Reset.Before(before.Add(retryAfter)) || state.Reset.After(time.Now().Add(retryAfter)) {
+			t.Errorf("Reset = %v, want roughly now + %v", state.Reset, retryAfter)
+		}
+	})
+
+	t.Run("secondary rate limit without retry-after falls back", func(t *testing.T) {
+		client := &Client{}
+		before := time.Now()
+		client.observe(nil, &github.AbuseRateLimitError{})
+		state := client.RateLimit()
+		if !state.Exhausted {
+			t.Fatalf("unexpected state: %+v", state)
+		}
+		if state.Reset.Before(before.Add(secondaryLimitFallback)) {
+			t.Errorf("Reset = %v, want at least now + %v", state.Reset, secondaryLimitFallback)
+		}
+		if wait := state.WaitFor(time.Now()); wait <= 0 {
+			t.Errorf("WaitFor() = %v, want a wait to be enforced", wait)
+		}
+	})
+
+	t.Run("a successful response clears exhaustion", func(t *testing.T) {
+		client := &Client{}
+		client.observe(&github.Response{}, &github.RateLimitError{Response: &http.Response{}})
+		client.observe(&github.Response{Rate: github.Rate{Limit: 5000, Remaining: 4999}}, nil)
+		if state := client.RateLimit(); state.Exhausted {
+			t.Errorf("Exhausted should have been cleared: %+v", state)
+		}
+	})
+
+	t.Run("responses without rate headers keep the previous state", func(t *testing.T) {
+		client := &Client{}
+		client.observe(&github.Response{Rate: github.Rate{Limit: 5000, Remaining: 123}}, nil)
+		client.observe(nil, nil)
+		client.observe(&github.Response{}, errors.New("some other failure"))
+		if state := client.RateLimit(); state.Remaining != 123 {
+			t.Errorf("Remaining = %d, want 123", state.Remaining)
+		}
+	})
+}

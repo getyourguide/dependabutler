@@ -29,15 +29,22 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 | repoFile            | ³         |                     | file containing repositories, one per line    |
 | stable-group-prefixes | no      | true                | ensures group names have numeric prefixes (01_, 02_, etc.) |
 | update-missing-cooldown-settings | no | true          | update existing manifests adding default settings |
-| rateLimitBuffer                  | no⁴   | 0                   | GitHub API rate limit buffer (0=disabled). |
 
 ¹ mandatory for local mode  
 ² mandatory for remote mode  
-³ one of `repo` and `repoFile` required for remote mode (if both are set, `repo` takes precedence)  
-⁴ GitHub enforces API rate limits (e.g., 5000 requests per hour). Each repository may require multiple API calls,
-depending on the number of manifest files it contains. When the remaining API calls fall below a defined threshold, 
-the tool pauses and waits for the rate limit to reset. To prevent interruptions, set the buffer threshold based on 
-the expected number of API calls per repository (for example, 20 calls per repo).
+³ one of `repo` and `repoFile` required for remote mode (if both are set, `repo` takes precedence)
+
+### GitHub API Rate Limits
+
+GitHub enforces API rate limits (e.g. 5000 requests per hour), and each repository takes several API calls. The
+remaining budget is read from the `X-RateLimit-*` headers of the API responses dependabutler already receives, so no
+configuration is needed. When the budget is used up or a call is rejected, dependabutler waits until the reset time
+reported by GitHub; a repository that ran into the limit halfway through is retried once after the reset.
+
+The `GET /rate_limit` endpoint is deliberately not used: it has been observed reporting an untouched budget
+(`used=0`, `remaining=5000`) with a reset sliding along with wall-clock time, while the counter enforced on the same
+token's other requests had already been spent. GitHub's documentation also recommends the response headers over that
+endpoint.
 
 
 ### Local Mode
