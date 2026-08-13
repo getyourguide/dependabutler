@@ -12,8 +12,7 @@ import (
 
 	"github.com/getyourguide/dependabutler/internal/pkg/config"
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
-	"github.com/google/go-github/v50/github"
-	"golang.org/x/oauth2"
+	"github.com/google/go-github/v90/github"
 )
 
 // Client is a GitHub API client that keeps track of the rate limit reported by
@@ -28,13 +27,12 @@ type Client struct {
 }
 
 // NewClient returns a GitHub API client authenticated with the given token.
-func NewClient(accessToken string) *Client {
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: accessToken},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-	return &Client{gh: github.NewClient(tc)}
+func NewClient(accessToken string) (*Client, error) {
+	gh, err := github.NewClient(github.WithAuthToken(accessToken))
+	if err != nil {
+		return nil, err
+	}
+	return &Client{gh: gh}, nil
 }
 
 // GetRepository gets a repository object.
@@ -54,20 +52,19 @@ func (client *Client) GetRepository(org string, repo string) (*github.Repository
 }
 
 // GetRepoFileList returns a list (strings) of all files in a repo, including their path.
-func (client *Client) GetRepoFileList(org string, repo string, defaultBranch string) []string {
+func (client *Client) GetRepoFileList(org string, repo string, defaultBranch string) ([]string, error) {
 	// get the file tree
 	ctx := context.Background()
 	tree, resp, err := client.gh.Git.GetTree(ctx, org, repo, defaultBranch, true)
 	client.observe(resp, err)
 	if err != nil {
-		log.Printf("ERROR Got error when requesting GitHub repo tree.\n%v", err)
-		return nil
+		return nil, err
 	}
 	result := make([]string, 0)
 	for _, entry := range tree.Entries {
 		result = append(result, *entry.Path)
 	}
-	return result
+	return result, nil
 }
 
 // GetFileContent returns the content of a file
@@ -167,11 +164,12 @@ func (client *Client) CreateOrUpdatePullRequest(org string, repo string, baseBra
 		log.Printf("INFO  PR successfully updated: %s\n", existingPr.GetHTMLURL())
 	} else {
 		// Create a new PR for the branch. In case of an existing PR, no further action is needed.
-		newPR := &github.NewPullRequest{}
-		newPR.Title = &prParams.PRTitle
-		newPR.Body = &prDesc
-		newPR.Head = &branchName
-		newPR.Base = &baseBranch
+		newPR := github.CreatePullRequest{
+			Title: &prParams.PRTitle,
+			Body:  &prDesc,
+			Head:  branchName,
+			Base:  baseBranch,
+		}
 		pr, resp, err := client.gh.PullRequests.Create(ctx, org, repo, newPR)
 		client.observe(resp, err)
 		if err != nil {
@@ -281,8 +279,9 @@ func (client *Client) getReference(org string, repo string, baseBranch string, c
 		log.Printf("ERROR Could not get base branch %v of repo %v : %v\n", baseBranch, repo, err)
 		return nil, err
 	}
-	newRef := &github.Reference{Ref: github.String(commitRefName), Object: &github.GitObject{SHA: baseRef.Object.SHA}}
-	ref, _, err := client.gh.Git.CreateRef(ctx, org, repo, newRef)
+	newRef := github.CreateRef{Ref: commitRefName, SHA: *baseRef.Object.SHA}
+	ref, resp, err := client.gh.Git.CreateRef(ctx, org, repo, newRef)
+	client.observe(resp, err)
 	if err != nil {
 		log.Printf("ERROR Could not create commit branch %v for repo %v : %v\n", commitBranch, repo, err)
 		return nil, err
@@ -300,14 +299,13 @@ func (client *Client) pushCommit(ref *github.Reference, tree *github.Tree, org s
 	parent.Commit.SHA = parent.SHA
 	now := time.Now()
 	author := &github.CommitAuthor{Date: &github.Timestamp{Time: now}, Name: &authorName, Email: &authorEmail}
-	commit := &github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
-	newCommit, resp, err := client.gh.Git.CreateCommit(ctx, org, repo, commit)
+	commit := github.Commit{Author: author, Message: &commitMessage, Tree: tree, Parents: []*github.Commit{parent.Commit}}
+	newCommit, resp, err := client.gh.Git.CreateCommit(ctx, org, repo, commit, nil)
 	client.observe(resp, err)
 	if err != nil {
 		return err
 	}
-	ref.Object.SHA = newCommit.SHA
-	_, resp, err = client.gh.Git.UpdateRef(ctx, org, repo, ref, false)
+	_, resp, err = client.gh.Git.UpdateRef(ctx, org, repo, *ref.Ref, github.UpdateRef{SHA: *newCommit.SHA})
 	client.observe(resp, err)
 	if err != nil {
 		return err

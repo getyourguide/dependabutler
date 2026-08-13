@@ -32,13 +32,14 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 
 ¹ mandatory for local mode  
 ² mandatory for remote mode  
-³ one of `repo` and `repoFile` required for remote mode (if both are set, `repo` takes precedence)  
+³ one of `repo` and `repoFile` required for remote mode (if both are set, `repo` takes precedence)
+
 ### GitHub API Rate Limits
 
-GitHub enforces API rate limits (e.g. 5000 requests per hour), and each repository takes several API calls. When a
-call is rejected because the limit has been reached, dependabutler waits until the reset time reported by GitHub and
-then retries the repository once. The remaining budget is read from the `X-RateLimit-*` headers of the API responses
-it already receives, so no configuration is needed.
+GitHub enforces API rate limits (e.g. 5000 requests per hour), and each repository takes several API calls. The
+remaining budget is read from the `X-RateLimit-*` headers of the API responses dependabutler already receives, so no
+configuration is needed. When the budget is used up or a call is rejected, dependabutler waits until the reset time
+reported by GitHub; a repository that ran into the limit halfway through is retried once after the reset.
 
 The `GET /rate_limit` endpoint is deliberately not used: it has been observed reporting an untouched budget
 (`used=0`, `remaining=5000`) with a reset sliding along with wall-clock time, while the counter enforced on the same

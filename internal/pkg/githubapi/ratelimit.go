@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/google/go-github/v50/github"
+	"github.com/google/go-github/v90/github"
 )
 
 // resetGrace is added to every wait, so a request is not retried a fraction of a
@@ -15,6 +15,11 @@ const resetGrace = 5 * time.Second
 // limit that came without a Retry-After header. GitHub does not guarantee the
 // header, and retrying straight into a secondary limit tends to extend it.
 const secondaryLimitFallback = time.Minute
+
+// maxWait caps the pause suggested by WaitFor. Primary rate limit windows are
+// one hour and secondary limits ask for minutes, so a longer wait can only come
+// from a bogus reset timestamp and should not stall a run for hours.
+const maxWait = time.Hour + resetGrace
 
 // RateLimitState is a snapshot of the GitHub API rate limit, taken from the
 // X-RateLimit-* headers of the most recent API response.
@@ -31,8 +36,8 @@ type RateLimitState struct {
 	Remaining int
 	// Reset is the time the current window rolls over.
 	Reset time.Time
-	// Exhausted is true if the last API call was rejected because a primary or
-	// secondary rate limit had been reached.
+	// Exhausted is true if the budget is used up or the last API call was
+	// rejected because a primary or secondary rate limit had been reached.
 	Exhausted bool
 }
 
@@ -47,7 +52,7 @@ func (s RateLimitState) WaitFor(now time.Time) time.Duration {
 	if !s.Reset.After(now) {
 		return 0
 	}
-	return s.Reset.Sub(now) + resetGrace
+	return min(s.Reset.Sub(now)+resetGrace, maxWait)
 }
 
 // observe records the rate limit reported by a GitHub API call. Both arguments
@@ -98,6 +103,10 @@ func (client *Client) observe(resp *github.Response, err error) {
 		Known:     true,
 		Remaining: resp.Rate.Remaining,
 		Reset:     resp.Rate.Reset.Time,
+		// An empty budget means the next request would be rejected anyway, so
+		// waiting proactively saves the doomed call. It also catches rejections
+		// go-github does not classify as rate limit errors.
+		Exhausted: resp.Rate.Remaining == 0,
 	}
 }
 

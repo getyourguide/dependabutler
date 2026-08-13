@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-github/v50/github"
+	"github.com/google/go-github/v90/github"
 )
 
 func TestRateLimitStateWaitFor(t *testing.T) {
@@ -44,6 +44,11 @@ func TestRateLimitStateWaitFor(t *testing.T) {
 			want:  0,
 		},
 		{
+			name:  "bogus reset far in the future is capped",
+			state: RateLimitState{Known: true, Remaining: 0, Reset: now.Add(48 * time.Hour), Exhausted: true},
+			want:  maxWait,
+		},
+		{
 			name:  "exhausted without a known reset",
 			state: RateLimitState{Known: true, Exhausted: true},
 			want:  0,
@@ -70,6 +75,21 @@ func TestClientObserve(t *testing.T) {
 		}}, nil)
 		state := client.RateLimit()
 		if !state.Known || state.Remaining != 4200 || !state.Reset.Equal(reset) || state.Exhausted {
+			t.Errorf("unexpected state: %+v", state)
+		}
+	})
+
+	t.Run("an empty budget marks exhaustion even without a rate limit error", func(t *testing.T) {
+		// This is what a 429 rejection looks like when go-github does not
+		// classify it: a generic error, with the limit visible in the headers.
+		client := &Client{}
+		client.observe(&github.Response{Rate: github.Rate{
+			Limit:     5000,
+			Remaining: 0,
+			Reset:     github.Timestamp{Time: reset},
+		}}, errors.New("429 Too Many Requests"))
+		state := client.RateLimit()
+		if !state.Exhausted || !state.Reset.Equal(reset) {
 			t.Errorf("unexpected state: %+v", state)
 		}
 	})

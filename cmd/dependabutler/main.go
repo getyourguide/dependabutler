@@ -66,7 +66,13 @@ func getParameters() (string, string, bool, string, string, string, string) {
 	flag.StringVar(&org, "org", "", "org/owner name, required for mode=remote")
 	flag.StringVar(&repo, "repo", "", "repository name, for mode=remote")
 	flag.StringVar(&repoFile, "repoFile", "", "file containing repo list (one per line), for mode=remote")
+	// Deprecated since v0.9.5, kept so existing callers do not break on an unknown flag.
+	var rateLimitBuffer int
+	flag.IntVar(&rateLimitBuffer, "rateLimitBuffer", 0, "deprecated, has no effect: rate limits are handled automatically")
 	flag.Parse()
+	if rateLimitBuffer != 0 {
+		log.Printf("WARN  The -rateLimitBuffer flag is deprecated and has no effect: rate limits are handled automatically.")
+	}
 	switch mode {
 	case "local":
 		break
@@ -86,33 +92,28 @@ func getGitHubClient() *githubapi.Client {
 		log.Printf("ERROR Missing GITHUB_TOKEN environment variable, quitting.")
 		os.Exit(1)
 	}
-	return githubapi.NewClient(gitHubToken)
+	client, err := githubapi.NewClient(gitHubToken)
+	if err != nil {
+		log.Printf("ERROR Could not create GitHub client: %v", err)
+		os.Exit(1)
+	}
+	return client
 }
 
-// maxRateLimitWaits caps how often processing pauses for one repo, so a rate
-// limit that never resets cannot stall a run indefinitely.
-const maxRateLimitWaits = 3
-
 // waitForRateLimit pauses until the GitHub API rate limit allows further
-// requests, based on the limit reported by the API responses seen so far. It
-// quits the process if the limit is still exhausted after maxRateLimitWaits
-// pauses.
+// requests, based on the limit reported by the API responses seen so far. A
+// single pause is enough: the wait lasts until the reported reset (WaitFor caps
+// it against bogus reset timestamps), and the state cannot change in between,
+// because no API calls are made while waiting.
 func waitForRateLimit(gitHubClient *githubapi.Client) {
-	for attempt := 0; attempt <= maxRateLimitWaits; attempt++ {
-		state := gitHubClient.RateLimit()
-		wait := state.WaitFor(time.Now())
-		if wait <= 0 {
-			return
-		}
-		if attempt == maxRateLimitWaits {
-			break
-		}
-		log.Printf("WARN  Rate limit reached, waiting %v for the reset at %v (attempt %d/%d)...",
-			wait.Round(time.Second), state.Reset.UTC().Format(time.RFC3339), attempt+1, maxRateLimitWaits)
-		time.Sleep(wait)
+	state := gitHubClient.RateLimit()
+	wait := state.WaitFor(time.Now())
+	if wait <= 0 {
+		return
 	}
-	log.Printf("ERROR Rate limit still exhausted after %d waits, quitting.", maxRateLimitWaits)
-	os.Exit(1)
+	log.Printf("WARN  Rate limit reached, waiting %v for the reset at %v...",
+		wait.Round(time.Second), state.Reset.UTC().Format(time.RFC3339))
+	time.Sleep(wait)
 }
 
 // processRemoteRepoWithRateLimit processes one repo, waiting for the rate limit
@@ -156,7 +157,11 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 		return false
 	}
 	baseBranch := *gitHubRepo.DefaultBranch
-	fileList := gitHubClient.GetRepoFileList(org, repo, baseBranch)
+	fileList, err := gitHubClient.GetRepoFileList(org, repo, baseBranch)
+	if err != nil {
+		log.Printf("ERROR Could not read the file tree of repo %v: %v", repo, err)
+		return false
+	}
 	config.ScanFileList(fileList, manifests)
 	// update the configuration and create a PR
 	loadFileParameters := config.LoadFileContentParameters{Client: gitHubClient, Org: org, Repo: repo}
