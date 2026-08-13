@@ -251,7 +251,7 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 func (client *Client) getTree(ref *github.Reference, org string, repo string, file string, content string) (*github.Tree, error) {
 	ctx := context.Background()
 	entries := []*github.TreeEntry{
-		{Path: github.String(file), Type: github.String("blob"), Content: github.String(content), Mode: github.String("100644")},
+		{Path: github.Ptr(file), Type: github.Ptr("blob"), Content: github.Ptr(content), Mode: github.Ptr("100644")},
 	}
 	tree, resp, err := client.gh.Git.CreateTree(ctx, org, repo, *ref.Object.SHA, entries)
 	client.observe(resp, err)
