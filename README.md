@@ -20,7 +20,7 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 
 | parameter           | mandatory | default             | description                                   |
 |---------------------|-----------|---------------------|-----------------------------------------------|
-| mode                | yes       | local               | local or remote                               |
+| mode                | yes       | local               | local, remote or report                       |
 | configFile          | yes       | dependabutler.yml   | yml file holding the config for the tool      |
 | execute             | yes       | false               | true: create PR / write file; false: log-only |
 | dir                 | ¹         | *current directory* | directory containing repositories             |
@@ -31,8 +31,8 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 | update-missing-cooldown-settings | no | true          | update existing manifests adding default settings |
 
 ¹ mandatory for local mode  
-² mandatory for remote mode  
-³ one of `repo` and `repoFile` required for remote mode (if both are set, `repo` takes precedence)
+² mandatory for remote and report mode  
+³ one of `repo` and `repoFile` required for remote and report mode (if both are set, `repo` takes precedence)
 
 ### GitHub API Rate Limits
 
@@ -77,6 +77,62 @@ Examples:
 
 - `dependabutler -mode=remote -org=acme -repoFile=repolist.txt -execute=true`  
   scan all projects listed in `repolist.txt` and create PRs if needed
+
+
+### Report Mode
+Scan repos on GitHub like remote mode, and print what dependabutler detects instead of changing anything: the manifest
+files found, whether an update entry in `dependabot.yml` covers each of them, and the update entries with their
+schedule. Report mode never writes: no branch, commit, pull request or label is created, and `execute` has no effect.
+It needs the same parameters and `GITHUB_TOKEN` as remote mode.
+
+Each repo is printed as one JSON object per line on stdout, in the order of the input. Log messages go to stderr.
+
+Examples:
+
+- `dependabutler -mode=report -org=acme -repoFile=repolist.txt 2>/dev/null | jq -c 'select(.manifests) | {repo, uncovered: [.manifests[] | select(.covered | not) | .path]}'`  
+  list the manifests of each repo that no update entry covers
+
+Output for a repo that could be read:
+
+```json
+{"repo":"myproject","default_branch":"main","dependabot_yml":true,"tree_truncated":false,"manifests":[{"path":"Dockerfile","ecosystem":"docker","covered":true},{"path":"web/package.json","ecosystem":"npm","covered":false}],"updates":[{"ecosystem":"docker","directory":"/","schedule":{"interval":"weekly","day":"sunday","timezone":"Europe/Berlin"}}]}
+```
+
+| field                 | description                                                                               |
+|-----------------------|-------------------------------------------------------------------------------------------|
+| repo                  | name of the repository, as given in `repo` or `repoFile`                                  |
+| default_branch        | branch that was scanned                                                                   |
+| dependabot_yml        | whether `.github/dependabot.yml` exists                                                   |
+| tree_truncated        | GitHub returned an incomplete file list, so some manifests may be missing from the report |
+| manifests             | manifest files matching `manifest-patterns`, sorted by path                               |
+| manifests[].path      | path of the file, relative to the repository root                                         |
+| manifests[].ecosystem | the `manifest-patterns` key the file matched                                              |
+| manifests[].covered   | whether an existing update entry covers the file (the same check as in remote mode)       |
+| updates               | update entries of `dependabot.yml`, in file order                                         |
+| updates[].ecosystem   | `package-ecosystem` of the entry                                                          |
+| updates[].directory   | `directory` of the entry, if set                                                          |
+| updates[].directories | `directories` of the entry, if set                                                        |
+| updates[].schedule    | `interval`, and `cronjob`, `day`, `time` and `timezone` if set                            |
+
+Registries are not part of the report, so no registry URLs or credentials are printed.
+
+A repo that is skipped or cannot be read is still printed, with only `repo` and one of these fields:
+
+```json
+{"repo":"oldproject","skipped":"archived"}
+{"repo":"missing","error":"GET https://api.github.com/repos/acme/missing: 404 Not Found []"}
+```
+
+`skipped` is `archived` or `empty`. As in remote mode, the exit code is 1 if any repo has an `error`.
+
+Known limits:
+
+- Detection relies on `manifest-patterns`: files that match no pattern are not reported. To find candidates for a new
+  pattern, run the report with an extended pattern in a copy of the configuration file.
+- Coverage uses the same rules as remote mode: an entry covers the manifests in its directory and below, except for
+  `docker`, where the directory must match exactly, and `github-actions`, where one entry for `/` covers all
+  workflows. Glob patterns in `directories` (like `/apps/*`) are not recognized, so the manifests they cover are
+  reported as not covered.
 
 
 ## Contributing
