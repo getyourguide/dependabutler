@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"log"
 	"os"
@@ -68,7 +69,7 @@ func sanitizeRepoName(repo string) string {
 func getParameters() (string, string, bool, string, string, string, string) {
 	var mode, dir, repo, repoFile, org, configFile string
 	var execute bool
-	flag.StringVar(&mode, "mode", "local", "local or remote")
+	flag.StringVar(&mode, "mode", "local", "local, remote or report")
 	flag.StringVar(&configFile, "configFile", "dependabutler.yml", "location of tool config file")
 	flag.BoolVar(&execute, "execute", false, "true: write file/create PR; false: log-only mode")
 	flag.StringVar(&dir, "dir", "./", "local directory containing the project, for mode=local")
@@ -85,7 +86,7 @@ func getParameters() (string, string, bool, string, string, string, string) {
 	switch mode {
 	case "local":
 		break
-	case "remote":
+	case "remote", "report":
 		if (repo == "" && repoFile == "") || org == "" {
 			showUsageAndExit()
 		}
@@ -240,6 +241,41 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 	return true
 }
 
+// reportRemoteRepo prints the coverage report of one repo as a JSON line. Every repo gets exactly one line, also
+// when it is skipped or cannot be read, so that consumers can tell these cases apart from a repo without manifests.
+func reportRemoteRepo(gitHubClient *githubapi.Client, org string, repo string, output *json.Encoder) (success bool) {
+	var line any
+	success = processRemoteRepoWithRateLimit(gitHubClient, repo, func() bool {
+		loaded, skipReason, err := loadRemoteRepo(gitHubClient, org, repo)
+		if err != nil {
+			line = config.SkippedRepoReport{Repo: repo, Error: err.Error()}
+			return false
+		}
+
+		if skipReason != "" {
+			line = config.SkippedRepoReport{Repo: repo, Skipped: skipReason}
+			return true
+		}
+
+		report, err := config.NewRepoReport(repo, loaded.defaultBranch, loaded.config, loaded.files, loaded.treeTruncated)
+		if err != nil {
+			log.Printf("ERROR Could not report on repo %v: %v", repo, err)
+			line = config.SkippedRepoReport{Repo: repo, Error: err.Error()}
+			return false
+		}
+
+		line = report
+		return true
+	})
+
+	if err := output.Encode(line); err != nil {
+		log.Printf("ERROR Could not write the report of repo %v: %v", repo, err)
+		return false
+	}
+
+	return success
+}
+
 func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) (success bool) {
 	// find manifests
 	manifests := map[string]string{}
@@ -312,6 +348,18 @@ func main() {
 		for _, repo := range remoteRepoNames(repo, repoFile) {
 			process := func() bool { return processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo) }
 			if !processRemoteRepoWithRateLimit(gitHubClient, repo, process) {
+				failureCount++
+			}
+		}
+	} else if mode == "report" {
+		if execute {
+			log.Printf("WARN  -execute has no effect in report mode, nothing is written.")
+		}
+
+		gitHubClient := getGitHubClient()
+		output := json.NewEncoder(os.Stdout)
+		for _, repo := range remoteRepoNames(repo, repoFile) {
+			if !reportRemoteRepo(gitHubClient, org, repo, output) {
 				failureCount++
 			}
 		}
