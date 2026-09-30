@@ -95,6 +95,20 @@ func getParameters() (string, string, bool, string, string, string, string) {
 	return mode, configFile, execute, dir, org, sanitizeRepoName(repo), repoFile
 }
 
+// remoteRepoNames returns the repositories to process in remote mode: repo if set, the lines of repoFile otherwise.
+func remoteRepoNames(repo string, repoFile string) []string {
+	if repo != "" {
+		return []string{repo}
+	}
+
+	var repos []string
+	for _, line := range util.ReadLinesFromFile(repoFile) {
+		repos = append(repos, sanitizeRepoName(line))
+	}
+
+	return repos
+}
+
 func getGitHubClient() *githubapi.Client {
 	gitHubToken := util.GetEnvParameter("GITHUB_TOKEN", true)
 	if gitHubToken == "" {
@@ -128,9 +142,9 @@ func waitForRateLimit(gitHubClient *githubapi.Client) {
 // processRemoteRepoWithRateLimit processes one repo, waiting for the rate limit
 // to reset beforehand if it is currently exhausted, and retrying the repo once
 // if it ran into the limit while being processed.
-func processRemoteRepoWithRateLimit(toolConfig config.ToolConfig, gitHubClient *githubapi.Client, execute bool, org string, repo string) bool {
+func processRemoteRepoWithRateLimit(gitHubClient *githubapi.Client, repo string, process func() bool) bool {
 	waitForRateLimit(gitHubClient)
-	if processRemoteRepo(toolConfig, gitHubClient, execute, org, repo) {
+	if process() {
 		return true
 	}
 	if !gitHubClient.RateLimit().Exhausted {
@@ -139,47 +153,71 @@ func processRemoteRepoWithRateLimit(toolConfig config.ToolConfig, gitHubClient *
 	}
 	log.Printf("WARN  Repo %v ran into the rate limit, retrying after the reset.", repo)
 	waitForRateLimit(gitHubClient)
-	return processRemoteRepo(toolConfig, gitHubClient, execute, org, repo)
+	return process()
 }
 
-func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Client, execute bool, org string, repo string) (success bool) {
-	// find manifests
-	manifests := map[string]string{}
+// remoteRepo holds what is read from GitHub to process a repository.
+type remoteRepo struct {
+	defaultBranch string
+	config        []byte // nil if .github/dependabot.yml does not exist
+	files         []string
+}
 
-	// get the current config and file list, from GitHub, via API
+// loadRemoteRepo reads the dependabot config and the file list of a repository. It returns a skip reason
+// instead if there is nothing to process.
+func loadRemoteRepo(gitHubClient *githubapi.Client, org string, repo string) (loaded remoteRepo, skipReason string, err error) {
 	gitHubRepo, err := gitHubClient.GetRepository(org, repo)
 	if err != nil {
-		return false
+		return remoteRepo{}, "", err
 	}
+
 	if *gitHubRepo.Archived {
 		log.Printf("INFO  Repository %v is archived. Nothing to do.", repo)
-		return true // not an error, just skip
+		return remoteRepo{}, "archived", nil
 	}
+
 	currentConfig, err := gitHubClient.GetFileContent(org, repo, ".github/dependabot.yml", "")
 	if err != nil {
 		if strings.Contains(err.Error(), "This repository is empty") {
 			log.Printf("INFO  Repository %v is empty. Nothing to do.", repo)
-			return true // not an error, just skip
+			return remoteRepo{}, "empty", nil
 		}
 
 		log.Printf("ERROR Could not read config of repo %v: %v", repo, err)
-		return false
+		return remoteRepo{}, "", err
 	}
+
 	baseBranch := *gitHubRepo.DefaultBranch
 	fileList, err := gitHubClient.GetRepoFileList(org, repo, baseBranch)
 	if err != nil {
 		log.Printf("ERROR Could not read the file tree of repo %v: %v", repo, err)
+		return remoteRepo{}, "", err
+	}
+
+	return remoteRepo{defaultBranch: baseBranch, config: currentConfig, files: fileList}, "", nil
+}
+
+func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Client, execute bool, org string, repo string) (success bool) {
+	loaded, skipReason, err := loadRemoteRepo(gitHubClient, org, repo)
+	if err != nil {
 		return false
 	}
-	config.ScanFileList(fileList, manifests)
+
+	if skipReason != "" {
+		return true // not an error, just skip
+	}
+
+	// find manifests
+	manifests := map[string]string{}
+	config.ScanFileList(loaded.files, manifests)
 	// update the configuration and create a PR
 	loadFileParameters := config.LoadFileContentParameters{Client: gitHubClient, Org: org, Repo: repo}
 	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{Client: gitHubClient, Org: org, Repo: repo}
-	yamlContent, changeInfo := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
+	yamlContent, changeInfo := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
 	if yamlContent != nil {
 		prDesc := githubapi.CreatePRDescription(changeInfo)
 		if execute {
-			if err := gitHubClient.CreateOrUpdatePullRequest(org, repo, baseBranch, prDesc, string(yamlContent), toolConfig); err != nil {
+			if err := gitHubClient.CreateOrUpdatePullRequest(org, repo, loaded.defaultBranch, prDesc, string(yamlContent), toolConfig); err != nil {
 				if strings.Contains(err.Error(), "pull request already exists") {
 					log.Printf("WARN  There's an open pull request already on repo %v. Close or merge it first.", repo)
 				} else if strings.Contains(err.Error(), "Resource not accessible") {
@@ -266,15 +304,10 @@ func main() {
 	} else if mode == "remote" {
 		gitHubClient := getGitHubClient()
 
-		if repo != "" {
-			if !processRemoteRepoWithRateLimit(*toolConfig, gitHubClient, execute, org, repo) {
+		for _, repo := range remoteRepoNames(repo, repoFile) {
+			process := func() bool { return processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo) }
+			if !processRemoteRepoWithRateLimit(gitHubClient, repo, process) {
 				failureCount++
-			}
-		} else if repoFile != "" {
-			for _, repo := range util.ReadLinesFromFile(repoFile) {
-				if !processRemoteRepoWithRateLimit(*toolConfig, gitHubClient, execute, org, sanitizeRepoName(repo)) {
-					failureCount++
-				}
 			}
 		}
 	}
