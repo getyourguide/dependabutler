@@ -183,8 +183,8 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 				if strings.Contains(err.Error(), "pull request already exists") {
 					log.Printf("WARN  There's an open pull request already on repo %v. Close or merge it first.", repo)
 				} else if strings.Contains(err.Error(), "Resource not accessible") {
-					// Fail with error.
-					log.Fatalf("ERROR Could not create PR for repo %v, permission problem. Stopping. %v", repo, err)
+					log.Printf("ERROR Could not create PR for repo %v, permission problem: %v", repo, err)
+					return false
 				} else {
 					log.Printf("ERROR Could not create PR for repo %v: %v", repo, err)
 					return false
