@@ -161,6 +161,7 @@ type remoteRepo struct {
 	defaultBranch string
 	config        []byte // nil if .github/dependabot.yml does not exist
 	files         []string
+	treeTruncated bool
 }
 
 // loadRemoteRepo reads the dependabot config and the file list of a repository. It returns a skip reason
@@ -188,13 +189,17 @@ func loadRemoteRepo(gitHubClient *githubapi.Client, org string, repo string) (lo
 	}
 
 	baseBranch := *gitHubRepo.DefaultBranch
-	fileList, err := gitHubClient.GetRepoFileList(org, repo, baseBranch)
+	fileList, treeTruncated, err := gitHubClient.GetRepoFileList(org, repo, baseBranch)
 	if err != nil {
 		log.Printf("ERROR Could not read the file tree of repo %v: %v", repo, err)
 		return remoteRepo{}, "", err
 	}
 
-	return remoteRepo{defaultBranch: baseBranch, config: currentConfig, files: fileList}, "", nil
+	if treeTruncated {
+		log.Printf("WARN  The file tree of repo %v is truncated by GitHub, some manifests may be missed.", repo)
+	}
+
+	return remoteRepo{defaultBranch: baseBranch, config: currentConfig, files: fileList, treeTruncated: treeTruncated}, "", nil
 }
 
 func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Client, execute bool, org string, repo string) (success bool) {
