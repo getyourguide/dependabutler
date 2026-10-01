@@ -66,11 +66,10 @@ func MakeDirIfNotExists(directory string) error {
 }
 
 // ReadLinesFromFile reads a file and returns a string slice containing the lines
-func ReadLinesFromFile(name string) []string {
+func ReadLinesFromFile(name string) ([]string, error) {
 	file, err := os.Open(name)
 	if err != nil {
-		log.Printf("ERROR Could not open file %v : %v\n", name, err)
-		return nil
+		return nil, err
 	}
 	defer func(file *os.File) {
 		err := file.Close()
@@ -83,7 +82,7 @@ func ReadLinesFromFile(name string) []string {
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
-	return lines
+	return lines, scanner.Err()
 }
 
 // RandToken generates a random hex value.

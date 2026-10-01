@@ -152,6 +152,7 @@ type Registry struct {
 // Schedule holds the config items of a schedule
 type Schedule struct {
 	Interval string `yaml:"interval"`
+	Cronjob  string `yaml:"cronjob,omitempty"`
 	Day      string `yaml:"day,omitempty"`
 	Time     string `yaml:"time,omitempty"`
 	Timezone string `yaml:"timezone,omitempty"`

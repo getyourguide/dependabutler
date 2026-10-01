@@ -1021,6 +1021,27 @@ func intPtr(i int) *int {
 	return &i
 }
 
+func TestToYamlKeepsCronjob(t *testing.T) {
+	input := `version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: cron
+      cronjob: 0 3 * * 1,4
+      timezone: UTC
+`
+
+	parsedConfig, err := ParseDependabotConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDependabotConfig() failed: %v", err)
+	}
+
+	if got := string(parsedConfig.ToYaml()); got != input {
+		t.Errorf("ToYaml() did not keep the cronjob.\nExpected:\n%v\nGot:\n%v", input, got)
+	}
+}
+
 func TestIsEnvVarReference(t *testing.T) {
 	tests := []struct {
 		name     string

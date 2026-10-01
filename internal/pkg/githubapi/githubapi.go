@@ -51,20 +51,21 @@ func (client *Client) GetRepository(org string, repo string) (*github.Repository
 	return repository, nil
 }
 
-// GetRepoFileList returns a list (strings) of all files in a repo, including their path.
-func (client *Client) GetRepoFileList(org string, repo string, defaultBranch string) ([]string, error) {
+// GetRepoFileList returns a list (strings) of all files in a repo, including their path, and whether
+// GitHub truncated the list because the repo is too large.
+func (client *Client) GetRepoFileList(org string, repo string, defaultBranch string) ([]string, bool, error) {
 	// get the file tree
 	ctx := context.Background()
 	tree, resp, err := client.gh.Git.GetTree(ctx, org, repo, defaultBranch, true)
 	client.observe(resp, err)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	result := make([]string, 0)
 	for _, entry := range tree.Entries {
 		result = append(result, *entry.Path)
 	}
-	return result, nil
+	return result, tree.GetTruncated(), nil
 }
 
 // GetFileContent returns the content of a file

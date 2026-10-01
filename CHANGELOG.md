@@ -121,3 +121,16 @@ Initial version.
 - Deprecated the `rateLimitBuffer` parameter: rate limits no longer need to be configured. The flag is still
   accepted so existing callers keep working, but it has no effect (a warning is logged) and will be removed in a
   future release.
+
+## v0.10.0
+
+- Update to Go 1.27.1
+- Added `-mode=report`: prints one JSON line per repository with the manifests found, whether an update entry covers
+  each of them, and the update entries with their schedule. Nothing is written to the repositories.
+- A permission error when creating a pull request no longer stops the run: the repository is counted as failed and
+  the next one is processed.
+- Fixed `cronjob` being removed from `schedule` when `dependabot.yml` is rewritten, which left an invalid file for
+  entries using `interval: cron`.
+- A warning is logged when GitHub truncates the file list of a large repository, since manifests may be missed.
+- Remote mode fails if `repoFile` cannot be read or lists no repository, instead of exiting successfully without doing
+  anything. Blank lines in `repoFile` are skipped.
