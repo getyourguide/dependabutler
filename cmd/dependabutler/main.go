@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -96,17 +97,39 @@ func getParameters() (string, string, bool, string, string, string, string) {
 	return mode, configFile, execute, dir, org, sanitizeRepoName(repo), repoFile
 }
 
-// remoteRepoNames returns the repositories to process in remote mode: repo if set, the lines of repoFile otherwise.
-func remoteRepoNames(repo string, repoFile string) []string {
+// remoteRepoNames returns the repositories to process in remote mode: repo if set, the non-blank lines of repoFile
+// otherwise. It fails if repoFile cannot be read or lists no repository.
+func remoteRepoNames(repo string, repoFile string) ([]string, error) {
 	if repo != "" {
-		return []string{repo}
+		return []string{repo}, nil
+	}
+
+	lines, err := util.ReadLinesFromFile(repoFile)
+	if err != nil {
+		return nil, err
 	}
 
 	var repos []string
-	for _, line := range util.ReadLinesFromFile(repoFile) {
-		repos = append(repos, sanitizeRepoName(line))
+	for _, line := range lines {
+		if name := strings.TrimSpace(sanitizeRepoName(line)); name != "" {
+			repos = append(repos, name)
+		}
 	}
 
+	if len(repos) == 0 {
+		return nil, fmt.Errorf("no repository listed in %v", repoFile)
+	}
+
+	return repos, nil
+}
+
+// getRemoteRepoNames returns the repositories to process in remote mode, and exits if there are none.
+func getRemoteRepoNames(repo string, repoFile string) []string {
+	repos, err := remoteRepoNames(repo, repoFile)
+	if err != nil {
+		log.Printf("ERROR Could not read the repository list: %v", err)
+		os.Exit(1)
+	}
 	return repos
 }
 
@@ -343,9 +366,10 @@ func main() {
 			failureCount++
 		}
 	} else if mode == "remote" {
+		repos := getRemoteRepoNames(repo, repoFile)
 		gitHubClient := getGitHubClient()
 
-		for _, repo := range remoteRepoNames(repo, repoFile) {
+		for _, repo := range repos {
 			process := func() bool { return processRemoteRepo(*toolConfig, gitHubClient, execute, org, repo) }
 			if !processRemoteRepoWithRateLimit(gitHubClient, repo, process) {
 				failureCount++
@@ -356,9 +380,10 @@ func main() {
 			log.Printf("WARN  -execute has no effect in report mode, nothing is written.")
 		}
 
+		repos := getRemoteRepoNames(repo, repoFile)
 		gitHubClient := getGitHubClient()
 		output := json.NewEncoder(os.Stdout)
-		for _, repo := range remoteRepoNames(repo, repoFile) {
+		for _, repo := range repos {
 			if !reportRemoteRepo(gitHubClient, org, repo, output) {
 				failureCount++
 			}

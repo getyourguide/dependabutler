@@ -2,4 +2,4 @@
 
 ## Reporting a Vulnerability
 
-Reach out to security@getyourguide.com
+See [https://www.getyourguide.com/security.txt](https://www.getyourguide.com/security.txt).

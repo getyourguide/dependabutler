@@ -131,3 +131,5 @@ Initial version.
 - Fixed `cronjob` being removed from `schedule` when `dependabot.yml` is rewritten, which left an invalid file for
   entries using `interval: cron`.
 - A warning is logged when GitHub truncates the file list of a large repository, since manifests may be missed.
+- Remote mode fails if `repoFile` cannot be read or lists no repository, instead of exiting successfully without doing
+  anything. Blank lines in `repoFile` are skipped.
