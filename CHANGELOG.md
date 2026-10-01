@@ -124,6 +124,7 @@ Initial version.
 
 ## v0.10.0
 
+- Update to Go 1.27.1
 - Added `-mode=report`: prints one JSON line per repository with the manifests found, whether an update entry covers
   each of them, and the update entries with their schedule. Nothing is written to the repositories.
 - A permission error when creating a pull request no longer stops the run: the repository is counted as failed and
