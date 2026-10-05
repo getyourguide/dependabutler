@@ -134,3 +134,11 @@ Initial version.
 - A warning is logged when GitHub truncates the file list of a large repository, since manifests may be missed.
 - Remote mode fails if `repoFile` cannot be read or lists no repository, instead of exiting successfully without doing
   anything. Blank lines in `repoFile` are skipped.
+
+## v0.10.1
+
+- Keys of `dependabot.yml` that dependabutler does not know (like `multi-ecosystem-groups`, `exclude-paths` or
+  `group-by`) are kept when the file is rewritten, at every level. Before, they were removed. Unknown keys are
+  written after the known ones of the same section.
+- Fixed `replaces-base` being rewritten as the string `"true"` instead of the boolean `true`. Files that already
+  contain the string form are read and written back as a boolean.
