@@ -152,8 +152,22 @@ type Registry struct {
 	Password     string         `yaml:"password,omitempty"`
 	Key          string         `yaml:"key,omitempty"`
 	Token        string         `yaml:"token,omitempty"`
-	ReplacesBase string         `yaml:"replaces-base,omitempty"`
+	ReplacesBase *LenientBool   `yaml:"replaces-base,omitempty"`
 	Unknown      map[string]any `yaml:",inline"`
+}
+
+// LenientBool is a boolean that is also read from a string, as dependabutler up to v0.10.0 wrote replaces-base: "true".
+type LenientBool bool
+
+// UnmarshalYAML reads a boolean or a string holding one.
+func (value *LenientBool) UnmarshalYAML(node *yaml.Node) error {
+	parsed, err := strconv.ParseBool(node.Value)
+	if err != nil {
+		return fmt.Errorf("line %d: %q is not a boolean", node.Line, node.Value)
+	}
+
+	*value = LenientBool(parsed)
+	return nil
 }
 
 // Schedule holds the config items of a schedule

@@ -1099,6 +1099,52 @@ multi-ecosystem-groups:
 	}
 }
 
+func TestToYamlKeepsReplacesBaseBoolean(t *testing.T) {
+	input := `version: 2
+registries:
+  pypi-false:
+    type: python-index
+    url: https://pypi.example.com/simple
+    replaces-base: false
+  pypi-true:
+    type: python-index
+    url: https://pypi.example.com/simple
+    replaces-base: true
+updates: []
+`
+
+	parsedConfig, err := ParseDependabotConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDependabotConfig() failed: %v", err)
+	}
+
+	if got := string(parsedConfig.ToYaml()); got != input {
+		t.Errorf("ToYaml() did not keep replaces-base as a boolean.\nExpected:\n%v\nGot:\n%v", input, got)
+	}
+}
+
+func TestToYamlFixesQuotedReplacesBase(t *testing.T) {
+	input := `version: 2
+registries:
+  pypi:
+    type: python-index
+    url: https://pypi.example.com/simple
+    replaces-base: "true"
+updates: []
+`
+
+	expected := strings.Replace(input, `"true"`, "true", 1)
+
+	parsedConfig, err := ParseDependabotConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDependabotConfig() failed: %v", err)
+	}
+
+	if got := string(parsedConfig.ToYaml()); got != expected {
+		t.Errorf("ToYaml() did not write replaces-base as a boolean.\nExpected:\n%v\nGot:\n%v", expected, got)
+	}
+}
+
 func TestCreateUpdateEntryAppliesScheduleAndCommitMessageOverrides(t *testing.T) {
 	toolConfig := ToolConfig{
 		UpdateDefaults: UpdateDefaults{
