@@ -1042,6 +1042,87 @@ updates:
 	}
 }
 
+func TestToYamlKeepsUnknownKeys(t *testing.T) {
+	input := `version: 2
+registries:
+  npm-registry:
+    type: npm-registry
+    url: https://npm.example.com
+    token: "${{secrets.NPM_TOKEN}}"
+    unknown-registry-key: "${{secrets.EXTRA}}"
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      unknown-schedule-key: x
+    registries:
+      - npm-registry
+    commit-message:
+      prefix: deps
+      unknown-commit-message-key: x
+    allow:
+      - dependency-name: foo
+        unknown-allow-key: x
+    ignore:
+      - dependency-name: bar
+        unknown-ignore-key: x
+    groups:
+      all:
+        patterns:
+          - '*'
+        group-by: dependency-name
+    pull-request-branch-name:
+      separator: '-'
+      unknown-branch-name-key: x
+    cooldown:
+      default-days: 3
+      unknown-cooldown-key: x
+    exclude-paths:
+      - vendor/**
+    multi-ecosystem-group: infra
+    patterns:
+      - '*'
+multi-ecosystem-groups:
+  infra:
+    schedule:
+      interval: weekly
+`
+
+	parsedConfig, err := ParseDependabotConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDependabotConfig() failed: %v", err)
+	}
+
+	if got := string(parsedConfig.ToYaml()); got != input {
+		t.Errorf("ToYaml() did not keep unknown keys.\nExpected:\n%v\nGot:\n%v", input, got)
+	}
+}
+
+func TestCreateUpdateEntryAppliesScheduleAndCommitMessageOverrides(t *testing.T) {
+	toolConfig := ToolConfig{
+		UpdateDefaults: UpdateDefaults{
+			Schedule:      Schedule{Interval: "weekly", Day: "sunday"},
+			CommitMessage: CommitMessage{Prefix: "default"},
+		},
+		UpdateOverrides: map[string]UpdateDefaults{
+			"npm": {
+				Schedule:      Schedule{Interval: "cron", Cronjob: "0 3 * * 1"},
+				CommitMessage: CommitMessage{Prefix: "npm"},
+			},
+		},
+	}
+
+	update := createUpdateEntry("npm", "/", toolConfig)
+
+	if update.Schedule.Interval != "cron" || update.Schedule.Cronjob != "0 3 * * 1" || update.Schedule.Day != "" {
+		t.Errorf("schedule override not applied, got %+v", update.Schedule)
+	}
+	if update.CommitMessage.Prefix != "npm" {
+		t.Errorf("commit-message override not applied, got %+v", update.CommitMessage)
+	}
+}
+
 func TestIsEnvVarReference(t *testing.T) {
 	tests := []struct {
 		name     string

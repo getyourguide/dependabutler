@@ -87,19 +87,22 @@ type DependabotConfig struct {
 	Registries           map[string]Registry `yaml:"registries,omitempty"`
 	Updates              []Update            `yaml:"updates"`
 	EnableBetaEcoSystems bool                `yaml:"enable-beta-ecosystems,omitempty"`
+	Unknown              map[string]any      `yaml:",inline"`
 }
 
 // Allow holds the config items of an allow definition
 type Allow struct {
-	DependencyName string `yaml:"dependency-name,omitempty"`
-	DependencyType string `yaml:"dependency-type,omitempty"`
+	DependencyName string         `yaml:"dependency-name,omitempty"`
+	DependencyType string         `yaml:"dependency-type,omitempty"`
+	Unknown        map[string]any `yaml:",inline"`
 }
 
 // Ignore holds the config items of an ignore definition
 type Ignore struct {
-	DependencyName string   `yaml:"dependency-name"`
-	Versions       []string `yaml:"versions,omitempty"`
-	UpdateTypes    []string `yaml:"update-types,omitempty"`
+	DependencyName string         `yaml:"dependency-name"`
+	Versions       []string       `yaml:"versions,omitempty"`
+	UpdateTypes    []string       `yaml:"update-types,omitempty"`
+	Unknown        map[string]any `yaml:",inline"`
 }
 
 // Update holds the config items of an update definition
@@ -119,60 +122,67 @@ type Update struct {
 	Labels                        []string         `yaml:"labels,omitempty"`
 	Milestone                     int              `yaml:"milestone,omitempty"`
 	PullRequestBranchName         struct {
-		Separator string `yaml:"separator"`
+		Separator string         `yaml:"separator"`
+		Unknown   map[string]any `yaml:",inline"`
 	} `yaml:"pull-request-branch-name,omitempty"`
-	RebaseStrategy     string   `yaml:"rebase-strategy,omitempty"`
-	Reviewers          []string `yaml:"reviewers,omitempty"`
-	TargetBranch       string   `yaml:"target-branch,omitempty"`
-	Vendor             bool     `yaml:"vendor,omitempty"`
-	VersioningStrategy string   `yaml:"versioning-strategy,omitempty"`
-	Cooldown           Cooldown `yaml:"cooldown,omitempty"`
+	RebaseStrategy     string         `yaml:"rebase-strategy,omitempty"`
+	Reviewers          []string       `yaml:"reviewers,omitempty"`
+	TargetBranch       string         `yaml:"target-branch,omitempty"`
+	Vendor             bool           `yaml:"vendor,omitempty"`
+	VersioningStrategy string         `yaml:"versioning-strategy,omitempty"`
+	Cooldown           Cooldown       `yaml:"cooldown,omitempty"`
+	Unknown            map[string]any `yaml:",inline"`
 }
 
 // Group holds the config items of a group definition
 type Group struct {
-	Separator       string   `yaml:"dependency-type,omitempty"`
-	Patterns        []string `yaml:"patterns,omitempty"`
-	ExcludePatterns []string `yaml:"exclude-patterns,omitempty"`
-	UpdateTypes     []string `yaml:"update-types,omitempty"`
-	AppliesTo       string   `yaml:"applies-to,omitempty"`
+	Separator       string         `yaml:"dependency-type,omitempty"`
+	Patterns        []string       `yaml:"patterns,omitempty"`
+	ExcludePatterns []string       `yaml:"exclude-patterns,omitempty"`
+	UpdateTypes     []string       `yaml:"update-types,omitempty"`
+	AppliesTo       string         `yaml:"applies-to,omitempty"`
+	Unknown         map[string]any `yaml:",inline"`
 }
 
 // Registry holds the config items of a registry definition
 type Registry struct {
-	Type         string `yaml:"type"`
-	URL          string `yaml:"url"`
-	Username     string `yaml:"username,omitempty"`
-	Password     string `yaml:"password,omitempty"`
-	Key          string `yaml:"key,omitempty"`
-	Token        string `yaml:"token,omitempty"`
-	ReplacesBase string `yaml:"replaces-base,omitempty"`
+	Type         string         `yaml:"type"`
+	URL          string         `yaml:"url"`
+	Username     string         `yaml:"username,omitempty"`
+	Password     string         `yaml:"password,omitempty"`
+	Key          string         `yaml:"key,omitempty"`
+	Token        string         `yaml:"token,omitempty"`
+	ReplacesBase string         `yaml:"replaces-base,omitempty"`
+	Unknown      map[string]any `yaml:",inline"`
 }
 
 // Schedule holds the config items of a schedule
 type Schedule struct {
-	Interval string `yaml:"interval"`
-	Cronjob  string `yaml:"cronjob,omitempty"`
-	Day      string `yaml:"day,omitempty"`
-	Time     string `yaml:"time,omitempty"`
-	Timezone string `yaml:"timezone,omitempty"`
+	Interval string         `yaml:"interval"`
+	Cronjob  string         `yaml:"cronjob,omitempty"`
+	Day      string         `yaml:"day,omitempty"`
+	Time     string         `yaml:"time,omitempty"`
+	Timezone string         `yaml:"timezone,omitempty"`
+	Unknown  map[string]any `yaml:",inline"`
 }
 
 // CommitMessage holds the config items for the commit message
 type CommitMessage struct {
-	Prefix            string `yaml:"prefix,omitempty"`
-	PrefixDevelopment string `yaml:"prefix-development,omitempty"`
-	Include           string `yaml:"include,omitempty"`
+	Prefix            string         `yaml:"prefix,omitempty"`
+	PrefixDevelopment string         `yaml:"prefix-development,omitempty"`
+	Include           string         `yaml:"include,omitempty"`
+	Unknown           map[string]any `yaml:",inline"`
 }
 
 // Cooldown holds the cooldown configuration for different semver update types
 type Cooldown struct {
-	SemverMajorDays int      `yaml:"semver-major-days,omitempty"`
-	SemverMinorDays int      `yaml:"semver-minor-days,omitempty"`
-	SemverPatchDays int      `yaml:"semver-patch-days,omitempty"`
-	DefaultDays     int      `yaml:"default-days,omitempty"`
-	Include         []string `yaml:"include,omitempty"`
-	Exclude         []string `yaml:"exclude,omitempty"`
+	SemverMajorDays int            `yaml:"semver-major-days,omitempty"`
+	SemverMinorDays int            `yaml:"semver-minor-days,omitempty"`
+	SemverPatchDays int            `yaml:"semver-patch-days,omitempty"`
+	DefaultDays     int            `yaml:"default-days,omitempty"`
+	Include         []string       `yaml:"include,omitempty"`
+	Exclude         []string       `yaml:"exclude,omitempty"`
+	Unknown         map[string]any `yaml:",inline"`
 }
 
 // ChangeInfo holds the changes applied to a config.
@@ -617,10 +627,10 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 
 // applyOverrides updates a config for an Update, using overridden values
 func applyOverrides(update *Update, overrides UpdateDefaults) {
-	if overrides.Schedule != (Schedule{}) {
+	if hasScheduleConfig(overrides.Schedule) {
 		update.Schedule = overrides.Schedule
 	}
-	if overrides.CommitMessage != (CommitMessage{}) {
+	if hasCommitMessageConfig(overrides.CommitMessage) {
 		update.CommitMessage = overrides.CommitMessage
 	}
 	if overrides.OpenPullRequestsLimit != nil {
@@ -831,4 +841,14 @@ func hasCooldownConfig(cooldown Cooldown) bool {
 	return cooldown.SemverMajorDays != 0 || cooldown.SemverMinorDays != 0 ||
 		cooldown.SemverPatchDays != 0 || cooldown.DefaultDays != 0 ||
 		len(cooldown.Include) > 0 || len(cooldown.Exclude) > 0
+}
+
+func hasScheduleConfig(schedule Schedule) bool {
+	return schedule.Interval != "" || schedule.Cronjob != "" || schedule.Day != "" ||
+		schedule.Time != "" || schedule.Timezone != "" || len(schedule.Unknown) > 0
+}
+
+func hasCommitMessageConfig(commitMessage CommitMessage) bool {
+	return commitMessage.Prefix != "" || commitMessage.PrefixDevelopment != "" ||
+		commitMessage.Include != "" || len(commitMessage.Unknown) > 0
 }
