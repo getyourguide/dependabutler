@@ -140,5 +140,5 @@ Initial version.
 - Keys of `dependabot.yml` that dependabutler does not know (like `multi-ecosystem-groups`, `exclude-paths` or
   `group-by`) are kept when the file is rewritten, at every level. Before, they were removed. Unknown keys are
   written after the known ones of the same section.
-- Fixed `replaces-base` being rewritten as the string `"true"` instead of the boolean `true`. Files that already
-  contain the string form are read and written back as a boolean.
+- Fixed `replaces-base` being rewritten as the string `"true"` instead of the boolean `true`. Files that contain the
+  string form are read, and written back as a boolean the next time dependabutler rewrites them.
