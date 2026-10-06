@@ -260,7 +260,42 @@ type CheckDirectoryExists func(directory string, params CheckDirectoryExistsPara
 
 // Parse parses the config.yml format
 func (config *ToolConfig) Parse(data []byte) error {
-	return yaml.Unmarshal(data, config)
+	if err := yaml.Unmarshal(data, config); err != nil {
+		return err
+	}
+
+	config.dropUnknownUpdateKeys()
+	return nil
+}
+
+// dropUnknownUpdateKeys keeps typos in the tool config out of the generated update entries.
+func (config *ToolConfig) dropUnknownUpdateKeys() {
+	dropUnknownKeysOf("update-defaults", &config.UpdateDefaults)
+
+	for ecosystem, overrides := range config.UpdateOverrides {
+		dropUnknownKeysOf("update-overrides."+ecosystem, &overrides)
+		config.UpdateOverrides[ecosystem] = overrides
+	}
+}
+
+func dropUnknownKeysOf(section string, defaults *UpdateDefaults) {
+	dropUnknownKeys(section+".schedule", &defaults.Schedule.Unknown)
+	dropUnknownKeys(section+".commit-message", &defaults.CommitMessage.Unknown)
+	dropUnknownKeys(section+".cooldown", &defaults.Cooldown.Unknown)
+}
+
+func dropUnknownKeys(section string, unknown *map[string]any) {
+	keys := make([]string, 0, len(*unknown))
+	for key := range *unknown {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+	for _, key := range keys {
+		log.Printf("WARN  Ignoring unknown key %q in %s of the tool config", key, section)
+	}
+
+	*unknown = nil
 }
 
 // Parse parses the dependabot.yml format
@@ -859,10 +894,10 @@ func hasCooldownConfig(cooldown Cooldown) bool {
 
 func hasScheduleConfig(schedule Schedule) bool {
 	return schedule.Interval != "" || schedule.Cronjob != "" || schedule.Day != "" ||
-		schedule.Time != "" || schedule.Timezone != "" || len(schedule.Unknown) > 0
+		schedule.Time != "" || schedule.Timezone != ""
 }
 
 func hasCommitMessageConfig(commitMessage CommitMessage) bool {
 	return commitMessage.Prefix != "" || commitMessage.PrefixDevelopment != "" ||
-		commitMessage.Include != "" || len(commitMessage.Unknown) > 0
+		commitMessage.Include != ""
 }

@@ -1169,6 +1169,57 @@ func TestCreateUpdateEntryAppliesScheduleAndCommitMessageOverrides(t *testing.T)
 	}
 }
 
+func TestParseToolConfigIgnoresUnknownUpdateKeys(t *testing.T) {
+	input := `update-defaults:
+  schedule:
+    interval: weekly
+    timezone: UTC
+    tmezone: Europe/Berlin
+  commit-message:
+    prefix: deps
+    prefx: x
+  cooldown:
+    default-days: 3
+    default-dys: 5
+update-overrides:
+  npm:
+    schedule:
+      tmezone: Europe/Berlin
+  pip:
+    schedule:
+      interval: daily
+      tmezone: Europe/Berlin
+`
+
+	toolConfig, err := ParseToolConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseToolConfig() failed: %v", err)
+	}
+
+	npmUpdate := createUpdateEntry("npm", "/", *toolConfig)
+	pipUpdate := createUpdateEntry("pip", "/", *toolConfig)
+
+	expectedNpmSchedule := Schedule{Interval: "weekly", Timezone: "UTC"}
+	if !reflect.DeepEqual(npmUpdate.Schedule, expectedNpmSchedule) {
+		t.Errorf("npm schedule: expected %+v, got %+v", expectedNpmSchedule, npmUpdate.Schedule)
+	}
+
+	expectedCommitMessage := CommitMessage{Prefix: "deps"}
+	if !reflect.DeepEqual(npmUpdate.CommitMessage, expectedCommitMessage) {
+		t.Errorf("npm commit-message: expected %+v, got %+v", expectedCommitMessage, npmUpdate.CommitMessage)
+	}
+
+	expectedCooldown := Cooldown{DefaultDays: 3}
+	if !reflect.DeepEqual(npmUpdate.Cooldown, expectedCooldown) {
+		t.Errorf("npm cooldown: expected %+v, got %+v", expectedCooldown, npmUpdate.Cooldown)
+	}
+
+	expectedPipSchedule := Schedule{Interval: "daily"}
+	if !reflect.DeepEqual(pipUpdate.Schedule, expectedPipSchedule) {
+		t.Errorf("pip schedule: expected %+v, got %+v", expectedPipSchedule, pipUpdate.Schedule)
+	}
+}
+
 func TestIsEnvVarReference(t *testing.T) {
 	tests := []struct {
 		name     string
