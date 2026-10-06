@@ -161,9 +161,15 @@ type LenientBool bool
 
 // UnmarshalYAML reads a boolean or a string holding one.
 func (value *LenientBool) UnmarshalYAML(node *yaml.Node) error {
+	var parsed bool
+	if node.Decode(&parsed) == nil {
+		*value = LenientBool(parsed)
+		return nil
+	}
+
 	parsed, err := strconv.ParseBool(node.Value)
 	if err != nil {
-		return fmt.Errorf("line %d: %q is not a boolean", node.Line, node.Value)
+		return fmt.Errorf("%q is not a boolean", node.Value)
 	}
 
 	*value = LenientBool(parsed)

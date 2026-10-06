@@ -1145,6 +1145,48 @@ updates: []
 	}
 }
 
+func TestToYamlReadsReplacesBaseYes(t *testing.T) {
+	input := `version: 2
+registries:
+  pypi:
+    type: python-index
+    url: https://pypi.example.com/simple
+    replaces-base: yes
+updates: []
+`
+
+	expected := strings.Replace(input, "yes", "true", 1)
+
+	parsedConfig, err := ParseDependabotConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDependabotConfig() failed: %v", err)
+	}
+
+	if got := string(parsedConfig.ToYaml()); got != expected {
+		t.Errorf("ToYaml() did not write replaces-base as a boolean.\nExpected:\n%v\nGot:\n%v", expected, got)
+	}
+}
+
+func TestParseDependabotConfigRejectsInvalidReplacesBase(t *testing.T) {
+	input := `version: 2
+registries:
+  pypi:
+    type: python-index
+    url: https://pypi.example.com/simple
+    replaces-base: maybe
+updates: []
+`
+
+	_, err := ParseDependabotConfig([]byte(input))
+
+	if err == nil {
+		t.Fatal("ParseDependabotConfig() accepted replaces-base: maybe")
+	}
+	if strings.Count(err.Error(), "line 6") != 1 {
+		t.Errorf("expected the line number once, got: %v", err)
+	}
+}
+
 func TestCreateUpdateEntryAppliesScheduleAndCommitMessageOverrides(t *testing.T) {
 	toolConfig := ToolConfig{
 		UpdateDefaults: UpdateDefaults{
