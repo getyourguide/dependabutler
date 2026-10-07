@@ -348,7 +348,7 @@ func TestAddManifest(t *testing.T) {
 		{"docker", "other_app/sub/folder/Dockerfile", 3, "/other_app/sub/folder", "weekly"},
 	} {
 		changeInfo := ChangeInfo{}
-		config.ProcessManifest(tt.manifestFile, tt.manifestType, toolConfig, nil, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
+		config.ProcessManifest(tt.manifestFile, tt.manifestType, toolConfig, RepoSettings{}, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
 		// check the number of expected elements
 		gotCount := len(config.Updates)
 		if gotCount != tt.expectedCount {
@@ -1252,7 +1252,7 @@ updates:
 	slotSchedule := &Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
 	directoryExists := func(string, CheckDirectoryExistsParameters) bool { return true }
 
-	dependabotConfig.UpdateConfig(map[string]string{"package.json": "npm", "go.mod": "gomod"}, ToolConfig{}, slotSchedule, nil,
+	dependabotConfig.UpdateConfig(map[string]string{"package.json": "npm", "go.mod": "gomod"}, ToolConfig{}, RepoSettings{SlotSchedule: slotSchedule},
 		LoadFileContentDummy, LoadFileContentParameters{}, directoryExists, CheckDirectoryExistsParameters{})
 
 	for _, update := range dependabotConfig.Updates {

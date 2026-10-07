@@ -160,6 +160,35 @@ func TestPullRequestConfigForOnlyEnforcedChanges(t *testing.T) {
 	}
 }
 
+func TestDirectoryGrouping(t *testing.T) {
+	property := func(value string, err error) func() (string, error) {
+		return func() (string, error) { return value, err }
+	}
+	withProperty := &config.DirectoryGrouping{Default: "global", Property: "dependabot-grouping"}
+
+	for _, tt := range []struct {
+		name     string
+		grouping *config.DirectoryGrouping
+		property func() (string, error)
+		mode     string
+		wantErr  bool
+	}{
+		{"off", nil, nil, "", false},
+		{"no property", &config.DirectoryGrouping{Default: "per-app"}, nil, "per-app", false},
+		{"property set", withProperty, property("per-app", nil), "per-app", false},
+		{"property not set", withProperty, property("", nil), "global", false},
+		{"property cannot be read", withProperty, property("", errors.New("forbidden")), "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mode, err := directoryGrouping(tt.grouping, tt.property)
+
+			if (err != nil) != tt.wantErr || mode != tt.mode {
+				t.Errorf("directoryGrouping() = %q, %v; expected %q, error %v", mode, err, tt.mode, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestLocalRepoName(t *testing.T) {
 	if got := localRepoName("given", "/some/dir"); got != "given" {
 		t.Errorf("localRepoName() = %q, expected the -repo value", got)

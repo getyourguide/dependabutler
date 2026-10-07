@@ -19,7 +19,8 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 ### Rewriting dependabot.yml
 When dependabutler changes a `dependabot.yml`, it writes the whole file again. Every key is kept, including keys
 dependabutler does not know, which are written after the known ones of the same section. Update entries are sorted by
-ecosystem and directory. Groups keep the order they are written in, since Dependabot puts a dependency in the first
+ecosystem and directory. A directory listed in `directories` that no longer exists is removed, like an entry whose
+`directory` no longer exists. Groups keep the order they are written in, since Dependabot puts a dependency in the first
 group it matches. Comments are not kept.
 
 ### Groups
@@ -43,6 +44,30 @@ repository. The configuration file is rejected when:
   composer, maven, mix, npm and pip, which Dependabot supports it for;
 - a group matching every dependency (`patterns: ["*"]` and nothing else) comes before another group that applies to the
   same updates: Dependabot puts a dependency in the first group it matches, so the later group would stay empty.
+
+### Directory grouping
+In a repository with several directories for the same ecosystem, `directory-grouping` chooses how they are split into
+update entries:
+
+- `global`: one entry for all directories (`directories:`), so each group gets one pull request for all of them.
+- `per-app`: one entry per directory, so each group gets one pull request per directory.
+
+```yaml
+directory-grouping:
+  default: global
+  property: dependabot-grouping   # optional custom property of a repository, with the value global or per-app
+```
+
+- A repository uses the value of its custom property if that is a mode, otherwise `default`. Teams can switch their
+  repository in its settings. The property is read with one API call per repository, which needs read access to custom
+  properties; if it cannot be read, the repository is skipped and counted as failed. In local mode, `default` is used.
+- In `global` mode, the directory of a new manifest is added to an entry of its ecosystem whose settings are the same
+  as those of a new entry, apart from directories and registries. If there is none, it gets its own entry.
+- Existing entries are changed only when `enforce` lists `directory-grouping`. In `global` mode, entries of an
+  ecosystem that have the same settings apart from directories and registries are merged, and their registries are
+  combined. Entries with other differences, for example in `ignore`, `commit-message` or `target-branch`, stay
+  separate. In `per-app` mode, entries with several directories are split into one entry per directory, unless another
+  entry already has one of those directories; directories with a glob pattern are left as they are.
 
 ### Schedule slots
 With `schedule-slots` in the configuration file, new update entries do not get the `schedule` of `update-defaults`.
@@ -99,8 +124,9 @@ enforce:
   repos-file: enforce-repos.txt
 ```
 
-- `fields` can hold `schedule`, `cooldown`, `open-pull-requests-limit` and `groups`. Each field is replaced as a whole,
-  so a `cooldown` also gets the configured `include` and `exclude` lists. Every other key is left as it is.
+- `fields` can hold `schedule`, `cooldown`, `open-pull-requests-limit`, `groups` and `directory-grouping`. Each field is
+  replaced as a whole, so a `cooldown` also gets the configured `include` and `exclude` lists. Every other key is left
+  as it is. `directory-grouping` merges or splits entries as described in "Directory grouping".
 - An entry is changed only if a field differs, so a repository that already matches gets no pull request.
 - `exceptions-file` lists repositories that keep their own values for some fields. `repo`, `fields`, `reason` and
   `owner` are required:
@@ -114,8 +140,9 @@ enforce:
   it, every repository is enforced. Other changes, like new update entries, still apply to every repository.
 - Both files are relative to the configuration file. Repository names match regardless of case.
 - Each enforced field needs a value to enforce: the schedule needs `schedule-slots` or a `schedule` in
-  `update-defaults`; the cooldown, the open pull request limit and the groups need theirs in `update-defaults`. When the
-  cooldown is enforced, `update-missing-cooldown-settings` does not fill in its missing fields.
+  `update-defaults`; the cooldown, the open pull request limit and the groups need theirs in `update-defaults`;
+  `directory-grouping` needs its block. When the cooldown is enforced, `update-missing-cooldown-settings` does not
+  fill in its missing fields.
 
 The pull request lists the reset settings. When they are the only change, `pull-request-parameters` can set its own
 title, commit message and a note, for example to explain why and how to request an exception:

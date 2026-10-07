@@ -170,6 +170,15 @@ func loadEnforce(toolConfig *config.ToolConfig, configFile string) error {
 	return nil
 }
 
+func logDirectoryGrouping(grouping *config.DirectoryGrouping) {
+	if grouping == nil {
+		log.Printf("INFO  Directory grouping is off.")
+		return
+	}
+
+	log.Printf("INFO  Directory grouping is %v by default, custom property %q.", grouping.Default, grouping.Property)
+}
+
 // pullRequestConfig returns the tool config to create the PR with: the enforce title and commit message when enforced
 // fields are the only changes.
 func pullRequestConfig(toolConfig config.ToolConfig, changeInfo config.ChangeInfo) config.ToolConfig {
@@ -201,6 +210,21 @@ func slotSchedule(slots *config.ScheduleSlots, repo string, readRulesets func() 
 
 	log.Printf("INFO  Schedule slot of repo %v: window %q, %q in %v.", repo, window.Name, schedule.Cronjob, schedule.Timezone)
 	return &schedule, nil
+}
+
+// directoryGrouping returns the directory grouping mode of a repo, or "" when directory-grouping is off. The custom
+// property is only read when one is configured.
+func directoryGrouping(grouping *config.DirectoryGrouping, readProperty func() (string, error)) (string, error) {
+	if grouping == nil || grouping.Property == "" {
+		return grouping.ModeFor(""), nil
+	}
+
+	value, err := readProperty()
+	if err != nil {
+		return "", fmt.Errorf("could not read the custom property %v: %w", grouping.Property, err)
+	}
+
+	return grouping.ModeFor(value), nil
 }
 
 // localRepoName returns the repo name for mode=local: repo if set, the name of dir otherwise.
@@ -334,8 +358,16 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 	// update the configuration and create a PR
 	loadFileParameters := config.LoadFileContentParameters{Client: gitHubClient, Org: org, Repo: repo}
 	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{Client: gitHubClient, Org: org, Repo: repo}
-	enforcedFields := toolConfig.Enforce.FieldsFor(repo)
-	yamlContent, changeInfo := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, schedule, enforcedFields, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
+	grouping, err := directoryGrouping(toolConfig.DirectoryGrouping, func() (string, error) {
+		return gitHubClient.GetCustomPropertyValue(org, repo, toolConfig.DirectoryGrouping.Property)
+	})
+	if err != nil {
+		log.Printf("ERROR Skipping repo %v: %v", repo, err)
+		return false
+	}
+
+	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: toolConfig.Enforce.FieldsFor(repo), DirectoryGrouping: grouping}
+	yamlContent, changeInfo := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, repoSettings, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
 	if yamlContent != nil {
 		prDesc := githubapi.CreatePRDescription(changeInfo, toolConfig.PullRequestParameters.EnforcePRNote)
 		if execute {
@@ -423,7 +455,9 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string, re
 	// update the configuration and save it back
 	loadFileParameters := config.LoadFileContentParameters{Directory: dir}
 	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{Directory: dir}
-	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, schedule, toolConfig.Enforce.FieldsFor(repo), dir, LoadLocalFileContent, loadFileParameters, CheckLocalDirectoryExists, checkDirectoryExistsParameters)
+	grouping := toolConfig.DirectoryGrouping.ModeFor("")
+	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: toolConfig.Enforce.FieldsFor(repo), DirectoryGrouping: grouping}
+	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, repoSettings, dir, LoadLocalFileContent, loadFileParameters, CheckLocalDirectoryExists, checkDirectoryExistsParameters)
 	if yamlContent != nil {
 		if execute {
 			if err := util.MakeDirIfNotExists(dirPath); err != nil {
@@ -470,6 +504,8 @@ func main() {
 			log.Printf("ERROR Could not load the enforce files: %v", err)
 			os.Exit(1)
 		}
+
+		logDirectoryGrouping(toolConfig.DirectoryGrouping)
 	}
 
 	// track number of failed repositories
@@ -511,7 +547,7 @@ func main() {
 }
 
 // GetUpdatedConfigYaml returns the new .dependabot.yml file content, based on the current content and the manifests found.
-func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, slotSchedule *config.Schedule, enforcedFields []string, repo string,
+func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, repoSettings config.RepoSettings, repo string,
 	loadFileFn config.LoadFileContent, loadFileParams config.LoadFileContentParameters, checkDirectoryExistsFn config.CheckDirectoryExists, checkDirectoryExistsParams config.CheckDirectoryExistsParameters,
 ) ([]byte, config.ChangeInfo) {
 	dependabotConfig, err := config.ParseDependabotConfig(currentConfig)
@@ -519,7 +555,7 @@ func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, too
 		log.Printf("ERROR Could not parse current config for %v: %v", repo, err)
 		return nil, config.ChangeInfo{}
 	}
-	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, slotSchedule, enforcedFields, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
+	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, repoSettings, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
 	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 || len(changeInfo.FixedUpdates) > 0 || len(changeInfo.RemovedUpdates) > 0 || len(changeInfo.RemovedRegistries) > 0 || len(changeInfo.EnforcedUpdates) > 0 {
 		// at least one item in the update block is needed
 		return dependabotConfig.ToYaml(), changeInfo
