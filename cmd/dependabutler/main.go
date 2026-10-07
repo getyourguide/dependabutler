@@ -75,7 +75,7 @@ func getParameters() (string, string, bool, string, string, string, string) {
 	flag.BoolVar(&execute, "execute", false, "true: write file/create PR; false: log-only mode")
 	flag.StringVar(&dir, "dir", "./", "local directory containing the project, for mode=local")
 	flag.StringVar(&org, "org", "", "org/owner name, required for mode=remote")
-	flag.StringVar(&repo, "repo", "", "repository name, for mode=remote")
+	flag.StringVar(&repo, "repo", "", "repository name, for mode=remote; for mode=local, the name schedule slots use (default: name of dir)")
 	flag.StringVar(&repoFile, "repoFile", "", "file containing repo list (one per line), for mode=remote")
 	// Deprecated since v0.9.5, kept so existing callers do not break on an unknown flag.
 	var rateLimitBuffer int
@@ -131,6 +131,64 @@ func getRemoteRepoNames(repo string, repoFile string) []string {
 		os.Exit(1)
 	}
 	return repos
+}
+
+// loadScheduleSlots reads the repos-files of the schedule slot windows, relative to the tool config, and logs the windows.
+func loadScheduleSlots(toolConfig *config.ToolConfig, configFile string) error {
+	slots := toolConfig.ScheduleSlots
+	if slots == nil {
+		log.Printf("INFO  Schedule slots are off.")
+		return nil
+	}
+
+	if err := slots.LoadReposFiles(filepath.Dir(configFile)); err != nil {
+		return err
+	}
+
+	log.Printf("INFO  Schedule slots are on, salt %q.", slots.Salt)
+	for _, window := range slots.Windows {
+		log.Printf("INFO  Schedule slots window %q: hours %v in %v, rulesets %v, repos-file %q.",
+			window.Name, window.Hours, window.Timezone, window.Rulesets, window.ReposFile)
+	}
+
+	return nil
+}
+
+// slotSchedule returns the schedule slot of a repo, or nil when schedule slots are off. Rulesets are only read when
+// a window selects repos by ruleset.
+func slotSchedule(slots *config.ScheduleSlots, repo string, readRulesets func() ([]string, error)) (*config.Schedule, error) {
+	if slots == nil {
+		return nil, nil
+	}
+
+	var rulesets []string
+	if slots.NeedsRulesets() {
+		var err error
+		rulesets, err = readRulesets()
+		if err != nil {
+			return nil, fmt.Errorf("could not read the rulesets of repo %v: %w", repo, err)
+		}
+	}
+
+	window := slots.WindowFor(repo, rulesets)
+	schedule := window.Schedule(slots.Salt, repo)
+
+	log.Printf("INFO  Schedule slot of repo %v: window %q, %q in %v.", repo, window.Name, schedule.Cronjob, schedule.Timezone)
+	return &schedule, nil
+}
+
+// localRepoName returns the repo name for mode=local: repo if set, the name of dir otherwise.
+func localRepoName(repo string, dir string) string {
+	if repo != "" {
+		return repo
+	}
+
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return filepath.Base(dir)
+	}
+
+	return filepath.Base(absDir)
 }
 
 func getGitHubClient() *githubapi.Client {
@@ -236,13 +294,21 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 		return true // not an error, just skip
 	}
 
+	schedule, err := slotSchedule(toolConfig.ScheduleSlots, repo, func() ([]string, error) {
+		return gitHubClient.GetActiveRulesetNames(org, repo)
+	})
+	if err != nil {
+		log.Printf("ERROR Skipping repo %v: %v", repo, err)
+		return false
+	}
+
 	// find manifests
 	manifests := map[string]string{}
 	config.ScanFileList(loaded.files, manifests)
 	// update the configuration and create a PR
 	loadFileParameters := config.LoadFileContentParameters{Client: gitHubClient, Org: org, Repo: repo}
 	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{Client: gitHubClient, Org: org, Repo: repo}
-	yamlContent, changeInfo := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
+	yamlContent, changeInfo := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, schedule, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
 	if yamlContent != nil {
 		prDesc := githubapi.CreatePRDescription(changeInfo)
 		if execute {
@@ -299,7 +365,16 @@ func reportRemoteRepo(gitHubClient *githubapi.Client, org string, repo string, o
 	return success
 }
 
-func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) (success bool) {
+func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string, repo string) (success bool) {
+	schedule, err := slotSchedule(toolConfig.ScheduleSlots, localRepoName(repo, dir), func() ([]string, error) {
+		log.Printf("WARN  Rulesets are not read in local mode, only repos-files select a schedule slots window.")
+		return nil, nil
+	})
+	if err != nil {
+		log.Printf("ERROR Could not choose a schedule slot: %v", err)
+		return false
+	}
+
 	// find manifests
 	manifests := map[string]string{}
 
@@ -320,7 +395,7 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string) (s
 	// update the configuration and save it back
 	loadFileParameters := config.LoadFileContentParameters{Directory: dir}
 	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{Directory: dir}
-	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, dir, LoadLocalFileContent, loadFileParameters, CheckLocalDirectoryExists, checkDirectoryExistsParameters)
+	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, schedule, dir, LoadLocalFileContent, loadFileParameters, CheckLocalDirectoryExists, checkDirectoryExistsParameters)
 	if yamlContent != nil {
 		if execute {
 			if err := util.MakeDirIfNotExists(dirPath); err != nil {
@@ -358,11 +433,18 @@ func main() {
 	// initialize / precompile the patterns
 	toolConfig.InitializePatterns()
 
+	if mode != "report" {
+		if err := loadScheduleSlots(toolConfig, configFile); err != nil {
+			log.Printf("ERROR Could not load the schedule slots: %v", err)
+			os.Exit(1)
+		}
+	}
+
 	// track number of failed repositories
 	failureCount := 0
 	// process
 	if mode == "local" {
-		if !processLocalRepo(*toolConfig, execute, dir) {
+		if !processLocalRepo(*toolConfig, execute, dir, repo) {
 			failureCount++
 		}
 	} else if mode == "remote" {
@@ -397,7 +479,7 @@ func main() {
 }
 
 // GetUpdatedConfigYaml returns the new .dependabot.yml file content, based on the current content and the manifests found.
-func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, repo string,
+func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, slotSchedule *config.Schedule, repo string,
 	loadFileFn config.LoadFileContent, loadFileParams config.LoadFileContentParameters, checkDirectoryExistsFn config.CheckDirectoryExists, checkDirectoryExistsParams config.CheckDirectoryExistsParameters,
 ) ([]byte, config.ChangeInfo) {
 	dependabotConfig, err := config.ParseDependabotConfig(currentConfig)
@@ -405,7 +487,7 @@ func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, too
 		log.Printf("ERROR Could not parse current config for %v: %v", repo, err)
 		return nil, config.ChangeInfo{}
 	}
-	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, nil, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
+	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, slotSchedule, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
 	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 || len(changeInfo.FixedUpdates) > 0 || len(changeInfo.RemovedUpdates) > 0 || len(changeInfo.RemovedRegistries) > 0 {
 		// at least one item in the update block is needed
 		return dependabotConfig.ToYaml(), changeInfo

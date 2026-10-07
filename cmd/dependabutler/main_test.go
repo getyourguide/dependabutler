@@ -1,11 +1,137 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/getyourguide/dependabutler/internal/pkg/config"
 )
+
+const scheduleSlotsConfig = `
+schedule-slots:
+  salt: test
+  windows:
+    - name: office-hours
+      hours: [10, 11, 13, 14, 15]
+      timezone: Europe/Berlin
+      rulesets: [audited]
+      repos-file: office-hours.txt
+    - name: early
+      hours: [2, 3, 4, 5, 6, 7, 8]
+      timezone: UTC
+`
+
+func loadTestScheduleSlots(t *testing.T) *config.ScheduleSlots {
+	t.Helper()
+
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "dependabutler.yml")
+	if err := os.WriteFile(configFile, []byte(scheduleSlotsConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "office-hours.txt"), []byte("opted-in\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	toolConfig, err := config.ParseToolConfig([]byte(scheduleSlotsConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loadScheduleSlots(toolConfig, configFile); err != nil {
+		t.Fatalf("loadScheduleSlots() failed: %v", err)
+	}
+
+	return toolConfig.ScheduleSlots
+}
+
+func TestLoadScheduleSlotsReadsReposFilesNextToTheConfig(t *testing.T) {
+	slots := loadTestScheduleSlots(t)
+
+	if got := slots.WindowFor("opted-in", nil).Name; got != "office-hours" {
+		t.Errorf("WindowFor(opted-in) = %q, expected office-hours", got)
+	}
+}
+
+func TestLoadScheduleSlotsWithoutSlots(t *testing.T) {
+	if err := loadScheduleSlots(&config.ToolConfig{}, "dependabutler.yml"); err != nil {
+		t.Errorf("loadScheduleSlots() failed without schedule-slots: %v", err)
+	}
+}
+
+func TestSlotSchedule(t *testing.T) {
+	slots := loadTestScheduleSlots(t)
+	rulesets := func(names ...string) func() ([]string, error) {
+		return func() ([]string, error) { return names, nil }
+	}
+
+	for _, tt := range []struct {
+		name     string
+		repo     string
+		rulesets func() ([]string, error)
+		timezone string
+	}{
+		{"audited by ruleset", "audited-repo", rulesets("default", "audited"), "Europe/Berlin"},
+		{"opted in by file", "opted-in", rulesets("default"), "Europe/Berlin"},
+		{"everything else", "plain-repo", rulesets("default"), "UTC"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			schedule, err := slotSchedule(slots, tt.repo, tt.rulesets)
+			if err != nil {
+				t.Fatalf("slotSchedule() failed: %v", err)
+			}
+
+			if schedule.Interval != "cron" || schedule.Cronjob == "" || schedule.Timezone != tt.timezone {
+				t.Errorf("slotSchedule() = %+v, expected a cron schedule in %v", schedule, tt.timezone)
+			}
+		})
+	}
+}
+
+func TestSlotScheduleFailsWhenRulesetsCannotBeRead(t *testing.T) {
+	slots := loadTestScheduleSlots(t)
+
+	_, err := slotSchedule(slots, "some-repo", func() ([]string, error) { return nil, errors.New("forbidden") })
+
+	if err == nil {
+		t.Errorf("slotSchedule() succeeded, expected the ruleset error")
+	}
+}
+
+func TestSlotScheduleWithoutSlotsReadsNoRulesets(t *testing.T) {
+	schedule, err := slotSchedule(nil, "some-repo", func() ([]string, error) {
+		t.Errorf("rulesets read without schedule-slots")
+		return nil, nil
+	})
+
+	if schedule != nil || err != nil {
+		t.Errorf("slotSchedule() = %v, %v, expected nil, nil", schedule, err)
+	}
+}
+
+func TestSlotScheduleReadsRulesetsOnlyWhenAWindowUsesThem(t *testing.T) {
+	slots := &config.ScheduleSlots{Windows: []config.SlotWindow{{Name: "early", Hours: []int{2}, Timezone: "UTC"}}}
+
+	schedule, err := slotSchedule(slots, "some-repo", func() ([]string, error) {
+		t.Errorf("rulesets read although no window uses them")
+		return nil, nil
+	})
+
+	if err != nil || schedule == nil || schedule.Cronjob == "" {
+		t.Errorf("slotSchedule() = %v, %v, expected a schedule", schedule, err)
+	}
+}
+
+func TestLocalRepoName(t *testing.T) {
+	if got := localRepoName("given", "/some/dir"); got != "given" {
+		t.Errorf("localRepoName() = %q, expected the -repo value", got)
+	}
+	if got := localRepoName("", "/some/my-repo/"); got != "my-repo" {
+		t.Errorf("localRepoName() = %q, expected the directory name", got)
+	}
+}
 
 func TestRemoteRepoNames(t *testing.T) {
 	dir := t.TempDir()
