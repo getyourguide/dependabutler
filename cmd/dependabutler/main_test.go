@@ -124,6 +124,42 @@ func TestSlotScheduleReadsRulesetsOnlyWhenAWindowUsesThem(t *testing.T) {
 	}
 }
 
+func TestLoadEnforceReadsFilesNextToTheConfig(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "dependabutler.yml")
+	if err := os.WriteFile(filepath.Join(dir, "rollout.txt"), []byte("in-wave\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	toolConfig := &config.ToolConfig{Enforce: &config.Enforce{Fields: []string{"cooldown"}, ReposFile: "rollout.txt"}}
+	if err := loadEnforce(toolConfig, configFile); err != nil {
+		t.Fatalf("loadEnforce() failed: %v", err)
+	}
+
+	if toolConfig.Enforce.FieldsFor("in-wave") == nil || toolConfig.Enforce.FieldsFor("later-wave") != nil {
+		t.Errorf("FieldsFor() does not follow the repos-file next to the config")
+	}
+}
+
+func TestLoadEnforceWithoutEnforce(t *testing.T) {
+	if err := loadEnforce(&config.ToolConfig{}, "dependabutler.yml"); err != nil {
+		t.Errorf("loadEnforce() failed without enforce: %v", err)
+	}
+}
+
+func TestPullRequestConfigForOnlyEnforcedChanges(t *testing.T) {
+	toolConfig := config.ToolConfig{PullRequestParameters: config.PullRequestParameters{PRTitle: "update", EnforcePRTitle: "enforce"}}
+	enforced := []config.EnforcedUpdateInfo{{Type: "npm", Directory: "/", Fields: []string{"cooldown"}}}
+
+	onlyEnforced := pullRequestConfig(toolConfig, config.ChangeInfo{EnforcedUpdates: enforced})
+	mixed := pullRequestConfig(toolConfig, config.ChangeInfo{EnforcedUpdates: enforced, NewUpdates: []config.UpdateInfo{{Type: "gomod"}}})
+
+	if onlyEnforced.PullRequestParameters.PRTitle != "enforce" || mixed.PullRequestParameters.PRTitle != "update" {
+		t.Errorf("titles: only enforced %q, mixed %q; expected enforce and update",
+			onlyEnforced.PullRequestParameters.PRTitle, mixed.PullRequestParameters.PRTitle)
+	}
+}
+
 func TestLocalRepoName(t *testing.T) {
 	if got := localRepoName("given", "/some/dir"); got != "given" {
 		t.Errorf("localRepoName() = %q, expected the -repo value", got)
