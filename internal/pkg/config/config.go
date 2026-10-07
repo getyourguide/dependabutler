@@ -47,6 +47,7 @@ type ToolConfig struct {
 	UpdateMissingCooldownSettings *bool                        `yaml:"update-missing-cooldown-settings,omitempty"`
 	ScheduleSlots                 *ScheduleSlots               `yaml:"schedule-slots,omitempty"`
 	Enforce                       *Enforce                     `yaml:"enforce,omitempty"`
+	DirectoryGrouping             *DirectoryGrouping           `yaml:"directory-grouping,omitempty"`
 }
 
 // DefaultRegistries holds the default registries for new update definitions
@@ -304,6 +305,12 @@ func (config *ToolConfig) Parse(data []byte) error {
 		}
 	}
 
+	if config.DirectoryGrouping != nil {
+		if err := config.DirectoryGrouping.validate(); err != nil {
+			return err
+		}
+	}
+
 	if config.Enforce != nil {
 		return config.validateEnforce()
 	}
@@ -329,6 +336,9 @@ func (config *ToolConfig) validateEnforce() error {
 	}
 	if util.Contains(fields, EnforceGroups) && len(defaults.Groups) == 0 {
 		return errors.New("enforcing the groups needs groups in update-defaults")
+	}
+	if util.Contains(fields, EnforceDirectoryGrouping) && config.DirectoryGrouping == nil {
+		return errors.New("enforcing directory-grouping needs the directory-grouping block")
 	}
 
 	return nil
