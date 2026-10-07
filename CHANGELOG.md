@@ -142,3 +142,10 @@ Initial version.
   written after the known ones of the same section.
 - Fixed `replaces-base` being rewritten as the string `"true"` instead of the boolean `true`. Files that contain the
   string form are read, and written back as a boolean the next time dependabutler rewrites them.
+
+## v0.11.0
+
+- Added `schedule-slots`: new update entries get a twice-weekly `cron` schedule derived from the repository name, in
+  one of several windows of hours. A window selects repositories by ruleset or by a file listing them. Off unless the
+  configuration file has the block. See "Schedule slots" in the README.
+- `-repo` sets the repository name used for schedule slots in local mode.
