@@ -16,6 +16,11 @@ go install github.com/getyourguide/dependabutler/cmd/dependabutler@latest
 ### Configuration file
 The default configuration file name is `dependabutler.yml`. Use `dependabutler-sample.yml` as a starting point and for reference.
 
+### Rewriting dependabot.yml
+When dependabutler changes a `dependabot.yml`, it writes the whole file again. Every key is kept, including keys
+dependabutler does not know, which are written after the known ones of the same section. Update entries are sorted by
+ecosystem and directory. Comments are not kept.
+
 ### Parameters
 
 | parameter           | mandatory | default             | description                                   |

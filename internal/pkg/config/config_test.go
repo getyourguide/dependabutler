@@ -1042,6 +1042,226 @@ updates:
 	}
 }
 
+func TestToYamlKeepsUnknownKeys(t *testing.T) {
+	input := `version: 2
+registries:
+  npm-registry:
+    type: npm-registry
+    url: https://npm.example.com
+    token: "${{secrets.NPM_TOKEN}}"
+    unknown-registry-key: "${{secrets.EXTRA}}"
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      unknown-schedule-key: x
+    registries:
+      - npm-registry
+    commit-message:
+      prefix: deps
+      unknown-commit-message-key: x
+    allow:
+      - dependency-name: foo
+        unknown-allow-key: x
+    ignore:
+      - dependency-name: bar
+        unknown-ignore-key: x
+    groups:
+      all:
+        patterns:
+          - '*'
+        group-by: dependency-name
+    pull-request-branch-name:
+      separator: '-'
+      unknown-branch-name-key: x
+    cooldown:
+      default-days: 3
+      unknown-cooldown-key: x
+    exclude-paths:
+      - vendor/**
+    multi-ecosystem-group: infra
+    patterns:
+      - '*'
+multi-ecosystem-groups:
+  infra:
+    schedule:
+      interval: weekly
+`
+
+	parsedConfig, err := ParseDependabotConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDependabotConfig() failed: %v", err)
+	}
+
+	if got := string(parsedConfig.ToYaml()); got != input {
+		t.Errorf("ToYaml() did not keep unknown keys.\nExpected:\n%v\nGot:\n%v", input, got)
+	}
+}
+
+func TestToYamlKeepsReplacesBaseBoolean(t *testing.T) {
+	input := `version: 2
+registries:
+  pypi-false:
+    type: python-index
+    url: https://pypi.example.com/simple
+    replaces-base: false
+  pypi-true:
+    type: python-index
+    url: https://pypi.example.com/simple
+    replaces-base: true
+updates: []
+`
+
+	parsedConfig, err := ParseDependabotConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDependabotConfig() failed: %v", err)
+	}
+
+	if got := string(parsedConfig.ToYaml()); got != input {
+		t.Errorf("ToYaml() did not keep replaces-base as a boolean.\nExpected:\n%v\nGot:\n%v", input, got)
+	}
+}
+
+func TestToYamlFixesQuotedReplacesBase(t *testing.T) {
+	input := `version: 2
+registries:
+  pypi:
+    type: python-index
+    url: https://pypi.example.com/simple
+    replaces-base: "true"
+updates: []
+`
+
+	expected := strings.Replace(input, `"true"`, "true", 1)
+
+	parsedConfig, err := ParseDependabotConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDependabotConfig() failed: %v", err)
+	}
+
+	if got := string(parsedConfig.ToYaml()); got != expected {
+		t.Errorf("ToYaml() did not write replaces-base as a boolean.\nExpected:\n%v\nGot:\n%v", expected, got)
+	}
+}
+
+func TestToYamlReadsReplacesBaseYes(t *testing.T) {
+	input := `version: 2
+registries:
+  pypi:
+    type: python-index
+    url: https://pypi.example.com/simple
+    replaces-base: yes
+updates: []
+`
+
+	expected := strings.Replace(input, "yes", "true", 1)
+
+	parsedConfig, err := ParseDependabotConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDependabotConfig() failed: %v", err)
+	}
+
+	if got := string(parsedConfig.ToYaml()); got != expected {
+		t.Errorf("ToYaml() did not write replaces-base as a boolean.\nExpected:\n%v\nGot:\n%v", expected, got)
+	}
+}
+
+func TestParseDependabotConfigRejectsInvalidReplacesBase(t *testing.T) {
+	input := `version: 2
+registries:
+  pypi:
+    type: python-index
+    url: https://pypi.example.com/simple
+    replaces-base: maybe
+updates: []
+`
+
+	_, err := ParseDependabotConfig([]byte(input))
+
+	if err == nil {
+		t.Fatal("ParseDependabotConfig() accepted replaces-base: maybe")
+	}
+	if strings.Count(err.Error(), "line 6") != 1 {
+		t.Errorf("expected the line number once, got: %v", err)
+	}
+}
+
+func TestCreateUpdateEntryAppliesScheduleAndCommitMessageOverrides(t *testing.T) {
+	toolConfig := ToolConfig{
+		UpdateDefaults: UpdateDefaults{
+			Schedule:      Schedule{Interval: "weekly", Day: "sunday"},
+			CommitMessage: CommitMessage{Prefix: "default"},
+		},
+		UpdateOverrides: map[string]UpdateDefaults{
+			"npm": {
+				Schedule:      Schedule{Interval: "cron", Cronjob: "0 3 * * 1"},
+				CommitMessage: CommitMessage{Prefix: "npm"},
+			},
+		},
+	}
+
+	update := createUpdateEntry("npm", "/", toolConfig)
+
+	if update.Schedule.Interval != "cron" || update.Schedule.Cronjob != "0 3 * * 1" || update.Schedule.Day != "" {
+		t.Errorf("schedule override not applied, got %+v", update.Schedule)
+	}
+	if update.CommitMessage.Prefix != "npm" {
+		t.Errorf("commit-message override not applied, got %+v", update.CommitMessage)
+	}
+}
+
+func TestParseToolConfigIgnoresUnknownUpdateKeys(t *testing.T) {
+	input := `update-defaults:
+  schedule:
+    interval: weekly
+    timezone: UTC
+    tmezone: Europe/Berlin
+  commit-message:
+    prefix: deps
+    prefx: x
+  cooldown:
+    default-days: 3
+    default-dys: 5
+update-overrides:
+  npm:
+    schedule:
+      tmezone: Europe/Berlin
+  pip:
+    schedule:
+      interval: daily
+      tmezone: Europe/Berlin
+`
+
+	toolConfig, err := ParseToolConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseToolConfig() failed: %v", err)
+	}
+
+	npmUpdate := createUpdateEntry("npm", "/", *toolConfig)
+	pipUpdate := createUpdateEntry("pip", "/", *toolConfig)
+
+	expectedNpmSchedule := Schedule{Interval: "weekly", Timezone: "UTC"}
+	if !reflect.DeepEqual(npmUpdate.Schedule, expectedNpmSchedule) {
+		t.Errorf("npm schedule: expected %+v, got %+v", expectedNpmSchedule, npmUpdate.Schedule)
+	}
+
+	expectedCommitMessage := CommitMessage{Prefix: "deps"}
+	if !reflect.DeepEqual(npmUpdate.CommitMessage, expectedCommitMessage) {
+		t.Errorf("npm commit-message: expected %+v, got %+v", expectedCommitMessage, npmUpdate.CommitMessage)
+	}
+
+	expectedCooldown := Cooldown{DefaultDays: 3}
+	if !reflect.DeepEqual(npmUpdate.Cooldown, expectedCooldown) {
+		t.Errorf("npm cooldown: expected %+v, got %+v", expectedCooldown, npmUpdate.Cooldown)
+	}
+
+	expectedPipSchedule := Schedule{Interval: "daily"}
+	if !reflect.DeepEqual(pipUpdate.Schedule, expectedPipSchedule) {
+		t.Errorf("pip schedule: expected %+v, got %+v", expectedPipSchedule, pipUpdate.Schedule)
+	}
+}
+
 func TestIsEnvVarReference(t *testing.T) {
 	tests := []struct {
 		name     string
