@@ -85,6 +85,7 @@ type UpdateDefaults struct {
 	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution"`
 	RebaseStrategy                string        `yaml:"rebase-strategy"`
 	Cooldown                      Cooldown      `yaml:"cooldown"`
+	Groups                        Groups        `yaml:"groups,omitempty"`
 }
 
 // DependabotConfig holds the configuration defined in dependabot.yml
@@ -147,6 +148,7 @@ type Group struct {
 	ExcludePatterns []string       `yaml:"exclude-patterns,omitempty"`
 	UpdateTypes     []string       `yaml:"update-types,omitempty"`
 	AppliesTo       string         `yaml:"applies-to,omitempty"`
+	GroupBy         string         `yaml:"group-by,omitempty"`
 	Unknown         map[string]any `yaml:",inline"`
 }
 
@@ -286,6 +288,10 @@ func (config *ToolConfig) Parse(data []byte) error {
 
 	config.dropUnknownUpdateKeys()
 
+	if err := config.validateGroups(); err != nil {
+		return err
+	}
+
 	if config.ScheduleSlots != nil {
 		if err := config.ScheduleSlots.validate(); err != nil {
 			return err
@@ -333,6 +339,10 @@ func dropUnknownKeysOf(section string, defaults *UpdateDefaults) {
 	dropUnknownKeys(section+".schedule", &defaults.Schedule.Unknown)
 	dropUnknownKeys(section+".commit-message", &defaults.CommitMessage.Unknown)
 	dropUnknownKeys(section+".cooldown", &defaults.Cooldown.Unknown)
+
+	for i := range defaults.Groups {
+		dropUnknownKeys(section+".groups."+defaults.Groups[i].Name, &defaults.Groups[i].Group.Unknown)
+	}
 }
 
 func dropUnknownKeys(section string, unknown *map[string]any) {
@@ -552,6 +562,7 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		RebaseStrategy:                toolConfig.UpdateDefaults.RebaseStrategy,
 		InsecureExternalCodeExecution: toolConfig.UpdateDefaults.InsecureExternalCodeExecution,
 		Cooldown:                      toolConfig.UpdateDefaults.Cooldown,
+		Groups:                        toolConfig.UpdateDefaults.Groups,
 	}
 	// apply override properties, if defined
 	overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]
@@ -565,6 +576,10 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		}
 
 		update.Schedule = *slotSchedule
+	}
+
+	if toolConfig.stableGroupPrefixes() {
+		ensureStableGroupPrefixes(&update)
 	}
 
 	fixNewUpdateConfig(&update, manifestType)
@@ -705,7 +720,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	}
 
 	// Handle stable group prefixes if enabled
-	if toolConfig.StableGroupPrefixes == nil || *toolConfig.StableGroupPrefixes {
+	if toolConfig.stableGroupPrefixes() {
 		for i := range config.Updates {
 			if len(config.Updates[i].Groups) > 0 {
 				ensureStableGroupPrefixes(&config.Updates[i])
@@ -774,6 +789,9 @@ func applyOverrides(update *Update, overrides UpdateDefaults) {
 	}
 	if hasCooldownConfig(overrides.Cooldown) {
 		update.Cooldown = overrides.Cooldown
+	}
+	if len(overrides.Groups) > 0 {
+		update.Groups = overrides.Groups
 	}
 }
 
