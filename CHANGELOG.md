@@ -170,3 +170,11 @@ Initial version.
   order Dependabot matches groups in. Groups that already have unique prefixes are not renamed.
 - Unknown keys in the groups of the configuration file are dropped with a warning. `group-by` is known.
 - A merge key (`<<`) in `groups` of a `dependabot.yml` is rejected instead of being read as a group named `<<`.
+
+## v0.14.0
+
+- Added `directory-grouping`: in a repository with several directories for an ecosystem, new manifests are added to
+  one entry for all directories (`global`) or get one entry per directory (`per-app`). A custom property of the
+  repository can choose the mode. With `directory-grouping` in `enforce`, existing entries are merged or split to match.
+- Directories listed in `directories` that no longer exist are removed. Before, only entries with a missing `directory`
+  were removed.

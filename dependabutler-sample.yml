@@ -120,6 +120,13 @@ pull-request-parameters:
 #   repos-file: enforce-repos.txt             # optional: enforce only these repos
 
 #
+# directory grouping: one update entry for all directories of an ecosystem (global) or one per directory (per-app)
+#
+# directory-grouping:
+#   default: global
+#   property: dependabot-grouping   # optional custom property a repository sets to global or per-app
+
+#
 # feature flags
 #
 stable-group-prefixes: true  # Adds numeric prefixes (01_, 02_, etc.) to group names, in the order the groups are written
