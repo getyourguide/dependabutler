@@ -216,8 +216,9 @@ type Cooldown struct {
 
 // RepoSettings holds the settings that depend on the repository being processed.
 type RepoSettings struct {
-	SlotSchedule   *Schedule
-	EnforcedFields []string
+	SlotSchedule      *Schedule
+	EnforcedFields    []string
+	DirectoryGrouping string
 }
 
 // ChangeInfo holds the changes applied to a config.
@@ -564,6 +565,16 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 		if len(updateRegistries) > 0 {
 			update.Registries = updateRegistries
 		}
+
+		// in global mode, add the directory to an update that can take it
+		if repoSettings.DirectoryGrouping == DirectoriesGlobal {
+			if i := compatibleUpdate(config.Updates, update); i >= 0 {
+				config.Updates[i].addDirectories(update.directories(), update.Registries)
+				changeInfo.NewUpdates = append(changeInfo.NewUpdates, UpdateInfo{Type: manifestType, Directory: manifestPath, File: manifestFile})
+				return
+			}
+		}
+
 		// add the update block, to the config
 		config.Updates = append(config.Updates, update)
 		changeInfo.NewUpdates = append(changeInfo.NewUpdates, UpdateInfo{Type: manifestType, Directory: manifestPath, File: manifestFile})
@@ -656,8 +667,17 @@ func (config *DependabotConfig) ToYaml() []byte {
 		sort.Slice(config.Updates, func(i, j int) bool {
 			a := config.Updates[i]
 			b := config.Updates[j]
-			return (a.PackageEcosystem < b.PackageEcosystem) ||
-				(a.PackageEcosystem == b.PackageEcosystem && a.Directory < b.Directory)
+			if a.PackageEcosystem != b.PackageEcosystem {
+				return a.PackageEcosystem < b.PackageEcosystem
+			}
+			if a.Directory != b.Directory {
+				return a.Directory < b.Directory
+			}
+			if updateDirectories(&a) != updateDirectories(&b) {
+				return updateDirectories(&a) < updateDirectories(&b)
+			}
+
+			return a.TargetBranch < b.TargetBranch
 		})
 	}
 
@@ -722,6 +742,15 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	// Remove updates with non-existing directories
 	var existingUpdates []Update
 	for _, update := range config.Updates {
+		if len(update.Directories) > 0 {
+			if kept := existingDirectories(update, checkDirectoryExists, checkDirectoryExistsParams, &changeInfo); len(kept) > 0 {
+				update.Directories = kept
+				existingUpdates = append(existingUpdates, update)
+			}
+
+			continue
+		}
+
 		if checkDirectoryExists(update.Directory, checkDirectoryExistsParams) {
 			existingUpdates = append(existingUpdates, update)
 		} else {
@@ -733,18 +762,22 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	// Fix existing updates, if necessary
 	config.fixExistingUpdates(toolConfig, repoSettings, &changeInfo)
 
-	// Iterate manifest files and check if they are covered by the current config file
-	for _, manifest := range manifestsSorted {
-		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, repoSettings, &changeInfo, loadFileFn, loadFileParams)
+	if util.Contains(repoSettings.EnforcedFields, EnforceDirectoryGrouping) {
+		config.groupDirectories(repoSettings.DirectoryGrouping, &changeInfo)
 	}
 
-	// Handle stable group prefixes if enabled
+	// Handle stable group prefixes if enabled, before new manifests are compared with the existing updates
 	if toolConfig.stableGroupPrefixes() {
 		for i := range config.Updates {
 			if len(config.Updates[i].Groups) > 0 {
 				ensureStableGroupPrefixes(&config.Updates[i])
 			}
 		}
+	}
+
+	// Iterate manifest files and check if they are covered by the current config file
+	for _, manifest := range manifestsSorted {
+		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, repoSettings, &changeInfo, loadFileFn, loadFileParams)
 	}
 
 	// Check if there are unused registries to be removed

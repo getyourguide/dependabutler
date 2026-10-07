@@ -81,3 +81,258 @@ func TestLoadFilesAcceptsDirectoriesExceptions(t *testing.T) {
 		t.Errorf("FieldsFor() = %v, expected only cooldown", got)
 	}
 }
+
+func groupDirectoriesWith(t *testing.T, dependabotYaml string, mode string, enforced []string, manifests map[string]string) (*DependabotConfig, ChangeInfo) {
+	t.Helper()
+
+	dependabotConfig, err := ParseDependabotConfig([]byte(dependabotYaml))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	toolConfig := ToolConfig{UpdateDefaults: UpdateDefaults{Schedule: Schedule{Interval: "weekly"}}}
+	repoSettings := RepoSettings{EnforcedFields: enforced, DirectoryGrouping: mode}
+	directoryExists := func(string, CheckDirectoryExistsParameters) bool { return true }
+	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, repoSettings,
+		LoadFileContentDummy, LoadFileContentParameters{}, directoryExists, CheckDirectoryExistsParameters{})
+
+	return dependabotConfig, changeInfo
+}
+
+func updateLocations(updates []Update) []string {
+	var locations []string
+	for i := range updates {
+		locations = append(locations, updates[i].PackageEcosystem+" "+updateDirectories(&updates[i]))
+	}
+
+	return locations
+}
+
+const dockerApps = `
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /a
+    registries: [first]
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /b
+    registries: [first, second]
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /c
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: nginx
+  - package-ecosystem: docker
+    directory: /d
+    target-branch: develop
+    schedule:
+      interval: weekly
+`
+
+func TestGlobalMergesCompatibleEntries(t *testing.T) {
+	dependabotConfig, changeInfo := groupDirectoriesWith(t, dockerApps, "global", []string{"directory-grouping"}, nil)
+
+	expected := []string{"docker /a, /b", "docker /c", "docker /d"}
+	if got := updateLocations(dependabotConfig.Updates); !reflect.DeepEqual(got, expected) {
+		t.Errorf("updates = %v, expected %v", got, expected)
+	}
+
+	merged := dependabotConfig.Updates[0]
+	if !reflect.DeepEqual(merged.Registries, []string{"first", "second"}) {
+		t.Errorf("registries = %v, expected both", merged.Registries)
+	}
+	if len(changeInfo.EnforcedUpdates) != 1 || changeInfo.EnforcedUpdates[0].Directory != "/a, /b" {
+		t.Errorf("EnforcedUpdates = %+v, expected the merged entry", changeInfo.EnforcedUpdates)
+	}
+}
+
+func TestGlobalMergeIsStableOnceWritten(t *testing.T) {
+	merged, _ := groupDirectoriesWith(t, dockerApps, "global", []string{"directory-grouping"}, nil)
+
+	_, changeInfo := groupDirectoriesWith(t, string(merged.ToYaml()), "global", []string{"directory-grouping"}, nil)
+
+	if len(changeInfo.EnforcedUpdates) != 0 {
+		t.Errorf("EnforcedUpdates = %+v on a file that was already merged", changeInfo.EnforcedUpdates)
+	}
+}
+
+func TestPerAppSplitsDirectories(t *testing.T) {
+	dependabotConfig, changeInfo := groupDirectoriesWith(t, `
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories: [/a, /b]
+    registries: [first]
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directories: ["/lib-*", /tools]
+    schedule:
+      interval: weekly
+`, "per-app", []string{"directory-grouping"}, nil)
+
+	expected := []string{"npm /a", "npm /b", "gomod /lib-*, /tools"}
+	if got := updateLocations(dependabotConfig.Updates); !reflect.DeepEqual(got, expected) {
+		t.Errorf("updates = %v, expected %v", got, expected)
+	}
+
+	dependabotConfig.Updates[0].Registries[0] = "changed"
+	if !reflect.DeepEqual(dependabotConfig.Updates[1].Registries, []string{"first"}) {
+		t.Errorf("split entries share their registries: %v", dependabotConfig.Updates[1].Registries)
+	}
+	if len(changeInfo.EnforcedUpdates) != 1 || changeInfo.EnforcedUpdates[0].Directory != "/a, /b" {
+		t.Errorf("EnforcedUpdates = %+v, expected the split entry", changeInfo.EnforcedUpdates)
+	}
+}
+
+func TestDirectoriesNotEnforcedLeavesExistingEntries(t *testing.T) {
+	dependabotConfig, _ := groupDirectoriesWith(t, dockerApps, "global", nil, nil)
+
+	if len(dependabotConfig.Updates) != 4 {
+		t.Errorf("updates = %v, expected the four entries unchanged", updateLocations(dependabotConfig.Updates))
+	}
+}
+
+const dockerApp = `
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /a
+    schedule:
+      interval: weekly
+`
+
+func TestGlobalAddsNewManifestsToACompatibleEntry(t *testing.T) {
+	dependabotConfig, changeInfo := groupDirectoriesWith(t, dockerApp, "global", nil, map[string]string{"b/Dockerfile": "docker"})
+
+	if got := updateLocations(dependabotConfig.Updates); !reflect.DeepEqual(got, []string{"docker /a, /b"}) {
+		t.Errorf("updates = %v, expected /b added to the existing entry", got)
+	}
+	if len(changeInfo.NewUpdates) != 1 || changeInfo.NewUpdates[0].Directory != "/b" {
+		t.Errorf("NewUpdates = %+v, expected /b", changeInfo.NewUpdates)
+	}
+}
+
+func TestGlobalAddsNewManifestsAsEntriesWhenNoneIsCompatible(t *testing.T) {
+	incompatible := strings.Replace(dockerApp, "    schedule:", "    commit-message: {prefix: deps}\n    schedule:", 1)
+
+	dependabotConfig, _ := groupDirectoriesWith(t, incompatible, "global", nil, map[string]string{"b/Dockerfile": "docker"})
+
+	if got := updateLocations(dependabotConfig.Updates); !reflect.DeepEqual(got, []string{"docker /a", "docker /b"}) {
+		t.Errorf("updates = %v, expected a new entry for /b", got)
+	}
+}
+
+func TestPerAppAddsNewManifestsAsEntries(t *testing.T) {
+	dependabotConfig, _ := groupDirectoriesWith(t, dockerApp, "per-app", nil, map[string]string{"b/Dockerfile": "docker"})
+
+	if got := updateLocations(dependabotConfig.Updates); !reflect.DeepEqual(got, []string{"docker /a", "docker /b"}) {
+		t.Errorf("updates = %v, expected a new entry for /b", got)
+	}
+}
+
+func TestUpdateConfigRemovesMissingDirectoriesOfAnEntry(t *testing.T) {
+	dependabotConfig, err := ParseDependabotConfig([]byte(`
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories: [/a, /gone, "/lib-*"]
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directories: [/gone, /also-gone]
+    schedule:
+      interval: weekly
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exists := func(directory string, _ CheckDirectoryExistsParameters) bool {
+		return !strings.Contains(directory, "gone")
+	}
+
+	changeInfo := dependabotConfig.UpdateConfig(nil, ToolConfig{}, RepoSettings{},
+		LoadFileContentDummy, LoadFileContentParameters{}, exists, CheckDirectoryExistsParameters{})
+
+	if got := updateLocations(dependabotConfig.Updates); !reflect.DeepEqual(got, []string{"docker /a, /lib-*"}) {
+		t.Errorf("updates = %v, expected only the existing directories", got)
+	}
+	if len(changeInfo.RemovedUpdates) != 3 {
+		t.Errorf("RemovedUpdates = %+v, expected the three missing directories", changeInfo.RemovedUpdates)
+	}
+}
+
+func TestPerAppDoesNotSplitIntoDirectoriesOfOtherEntries(t *testing.T) {
+	overlapping := `
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories: [/a, /b]
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /a
+    schedule:
+      interval: daily
+`
+
+	dependabotConfig, _ := groupDirectoriesWith(t, overlapping, "per-app", []string{"directory-grouping"}, nil)
+
+	if got := updateLocations(dependabotConfig.Updates); !reflect.DeepEqual(got, []string{"docker /a, /b", "docker /a"}) {
+		t.Errorf("updates = %v, expected the entries left as they are", got)
+	}
+}
+
+func TestToYamlOrdersEntriesWithSeveralDirectories(t *testing.T) {
+	dependabotConfig, err := ParseDependabotConfig([]byte(`
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories: [/x, /y]
+  - package-ecosystem: npm
+    directories: [/a, /b]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := string(dependabotConfig.ToYaml())
+
+	if strings.Index(got, "- /a") > strings.Index(got, "- /x") {
+		t.Errorf("ToYaml() did not order the entries by their directories:\n%v", got)
+	}
+}
+
+func TestGlobalAddsNewManifestsToEntriesWithUnprefixedGroups(t *testing.T) {
+	dependabotConfig, err := ParseDependabotConfig([]byte(`
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /a
+    schedule:
+      interval: weekly
+    groups:
+      minor-patch:
+        patterns: ["*"]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolConfig := ToolConfig{UpdateDefaults: UpdateDefaults{
+		Schedule: Schedule{Interval: "weekly"},
+		Groups:   Groups{{Name: "minor-patch", Group: Group{Patterns: []string{"*"}}}},
+	}}
+	exists := func(string, CheckDirectoryExistsParameters) bool { return true }
+
+	dependabotConfig.UpdateConfig(map[string]string{"b/Dockerfile": "docker"}, toolConfig, RepoSettings{DirectoryGrouping: "global"},
+		LoadFileContentDummy, LoadFileContentParameters{}, exists, CheckDirectoryExistsParameters{})
+
+	if got := updateLocations(dependabotConfig.Updates); !reflect.DeepEqual(got, []string{"docker /a, /b"}) {
+		t.Errorf("updates = %v, expected /b added to the existing entry", got)
+	}
+}
