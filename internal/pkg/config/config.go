@@ -321,6 +321,9 @@ func (config *ToolConfig) validateEnforce() error {
 	if util.Contains(fields, EnforceOpenPullRequestsLimit) && defaults.OpenPullRequestsLimit == nil {
 		return errors.New("enforcing the open-pull-requests-limit needs one in update-defaults")
 	}
+	if util.Contains(fields, EnforceGroups) && len(defaults.Groups) == 0 {
+		return errors.New("enforcing the groups needs groups in update-defaults")
+	}
 
 	return nil
 }
