@@ -18,9 +18,10 @@ const (
 	EnforceSchedule              = "schedule"
 	EnforceCooldown              = "cooldown"
 	EnforceOpenPullRequestsLimit = "open-pull-requests-limit"
+	EnforceGroups                = "groups"
 )
 
-var enforceableFields = []string{EnforceSchedule, EnforceCooldown, EnforceOpenPullRequestsLimit}
+var enforceableFields = []string{EnforceSchedule, EnforceCooldown, EnforceOpenPullRequestsLimit, EnforceGroups}
 
 // Enforce lists the fields of existing update entries that get the values a new entry would get.
 type Enforce struct {
@@ -169,11 +170,16 @@ func enforceUpdateConfig(update *Update, toolConfig ToolConfig, slotSchedule *Sc
 				update.OpenPullRequestsLimit = expected.OpenPullRequestsLimit
 				changed = append(changed, field)
 			}
+		case EnforceGroups:
+			if !sameYaml(update.Groups, expected.Groups) {
+				update.Groups = expected.Groups
+				changed = append(changed, field)
+			}
 		}
 	}
 
 	if len(changed) > 0 {
-		log.Printf("INFO  Enforced %v on %v %v.", strings.Join(changed, ", "), update.PackageEcosystem, update.Directory)
+		log.Printf("INFO  Enforced %v on %v %v.", strings.Join(changed, ", "), update.PackageEcosystem, updateDirectories(update))
 	}
 
 	return changed

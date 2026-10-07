@@ -383,3 +383,74 @@ func TestForEnforcementKeepsTheDefaultsWhenNotSet(t *testing.T) {
 		t.Errorf("ForEnforcement() = %+v, expected the default title and commit message", got)
 	}
 }
+
+const customGroupsEntry = `
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      01_minor:
+        patterns: ["*"]
+        update-types: [minor]
+`
+
+func groupsEnforceToolConfig(t *testing.T, stablePrefixes string) ToolConfig {
+	t.Helper()
+
+	toolConfig, err := ParseToolConfig([]byte(stablePrefixes + groupsToolConfig[strings.Index(groupsToolConfig, "update-defaults:"):] + "enforce:\n  fields: [groups]\n"))
+	if err != nil {
+		t.Fatalf("ParseToolConfig() failed: %v", err)
+	}
+
+	return *toolConfig
+}
+
+func TestUpdateConfigEnforcesGroups(t *testing.T) {
+	toolConfig := groupsEnforceToolConfig(t, "stable-group-prefixes: false\n")
+
+	dependabotConfig, changeInfo := updateConfigWith(t, customGroupsEntry, toolConfig, []string{"groups"})
+
+	if got := groupNames(dependabotConfig.Updates[0].Groups); !reflect.DeepEqual(got, []string{"minor-patch", "development-major"}) {
+		t.Errorf("groups = %v, expected the npm groups in their order", got)
+	}
+	if len(changeInfo.EnforcedUpdates) != 1 || !reflect.DeepEqual(changeInfo.EnforcedUpdates[0].Fields, []string{"groups"}) {
+		t.Errorf("EnforcedUpdates = %+v, expected groups", changeInfo.EnforcedUpdates)
+	}
+}
+
+func TestUpdateConfigEnforcedGroupsAreStableOnceWritten(t *testing.T) {
+	for _, stablePrefixes := range []string{"stable-group-prefixes: false\n", ""} {
+		toolConfig := groupsEnforceToolConfig(t, stablePrefixes)
+
+		enforced, _ := updateConfigWith(t, customGroupsEntry, toolConfig, []string{"groups"})
+		_, changeInfo := updateConfigWith(t, string(enforced.ToYaml()), toolConfig, []string{"groups"})
+
+		if len(changeInfo.EnforcedUpdates) != 0 {
+			t.Errorf("%qEnforcedUpdates = %+v on a file that was already enforced", stablePrefixes, changeInfo.EnforcedUpdates)
+		}
+	}
+}
+
+func TestParseToolConfigEnforcingGroupsNeedsDefaultGroups(t *testing.T) {
+	_, err := ParseToolConfig([]byte("enforce:\n  fields: [groups]\n"))
+
+	if err == nil || !strings.Contains(err.Error(), "groups in update-defaults") {
+		t.Errorf("ParseToolConfig() error = %v, expected it to ask for groups in update-defaults", err)
+	}
+}
+
+func TestLoadFilesAcceptsGroupsExceptions(t *testing.T) {
+	dir := writeEnforceFiles(t, "- {repo: monorepo, fields: [groups], reason: hand-tuned, owner: team-a}", "")
+	enforce := Enforce{Fields: []string{"groups", "cooldown"}, ExceptionsFile: "exceptions.yml"}
+
+	if err := enforce.LoadFiles(dir); err != nil {
+		t.Fatalf("LoadFiles() failed: %v", err)
+	}
+
+	if got := enforce.FieldsFor("monorepo"); !reflect.DeepEqual(got, []string{"cooldown"}) {
+		t.Errorf("FieldsFor() = %v, expected only cooldown", got)
+	}
+}
