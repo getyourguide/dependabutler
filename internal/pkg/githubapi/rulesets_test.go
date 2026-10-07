@@ -65,3 +65,35 @@ func TestGetActiveRulesetNamesReadsEveryPage(t *testing.T) {
 		t.Errorf("GetActiveRulesetNames() = %v, expected %v", got, expected)
 	}
 }
+
+func TestGetCustomPropertyValue(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"property_name": "owner", "value": "team-a"}, {"property_name": "dependabot-grouping", "value": "per-app"}]`))
+	}))
+	defer server.Close()
+
+	baseURL := server.URL + "/"
+	gh, err := github.NewClient(github.WithURLs(&baseURL, &baseURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{gh: gh}
+
+	for _, tt := range []struct {
+		property string
+		value    string
+	}{
+		{"dependabot-grouping", "per-app"},
+		{"not-set", ""},
+	} {
+		got, err := client.GetCustomPropertyValue("acme", "app", tt.property)
+		if err != nil {
+			t.Fatalf("GetCustomPropertyValue() failed: %v", err)
+		}
+
+		if got != tt.value {
+			t.Errorf("GetCustomPropertyValue(%q) = %q, expected %q", tt.property, got, tt.value)
+		}
+	}
+}
