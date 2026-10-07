@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -45,6 +46,7 @@ type ToolConfig struct {
 	StableGroupPrefixes           *bool                        `yaml:"stable-group-prefixes,omitempty"`
 	UpdateMissingCooldownSettings *bool                        `yaml:"update-missing-cooldown-settings,omitempty"`
 	ScheduleSlots                 *ScheduleSlots               `yaml:"schedule-slots,omitempty"`
+	Enforce                       *Enforce                     `yaml:"enforce,omitempty"`
 }
 
 // DefaultRegistries holds the default registries for new update definitions
@@ -274,7 +276,33 @@ func (config *ToolConfig) Parse(data []byte) error {
 	config.dropUnknownUpdateKeys()
 
 	if config.ScheduleSlots != nil {
-		return config.ScheduleSlots.validate()
+		if err := config.ScheduleSlots.validate(); err != nil {
+			return err
+		}
+	}
+
+	if config.Enforce != nil {
+		return config.validateEnforce()
+	}
+
+	return nil
+}
+
+func (config *ToolConfig) validateEnforce() error {
+	if err := config.Enforce.validate(); err != nil {
+		return err
+	}
+
+	defaults := config.UpdateDefaults
+	fields := config.Enforce.Fields
+	if util.Contains(fields, EnforceSchedule) && config.ScheduleSlots == nil && !hasScheduleConfig(defaults.Schedule) {
+		return errors.New("enforcing the schedule needs schedule-slots or a schedule in update-defaults")
+	}
+	if util.Contains(fields, EnforceCooldown) && !hasCooldownConfig(defaults.Cooldown) {
+		return errors.New("enforcing the cooldown needs a cooldown in update-defaults")
+	}
+	if util.Contains(fields, EnforceOpenPullRequestsLimit) && defaults.OpenPullRequestsLimit == nil {
+		return errors.New("enforcing the open-pull-requests-limit needs one in update-defaults")
 	}
 
 	return nil
