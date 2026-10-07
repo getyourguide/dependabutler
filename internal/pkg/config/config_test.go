@@ -493,7 +493,7 @@ update-types:
 
 	// Test marshaling Group with AppliesTo field
 	groupWithAppliesTo := Group{
-		Separator:       ",",
+		DependencyType:  ",",
 		Patterns:        []string{"axios", "fetch-mock"},
 		ExcludePatterns: []string{"@axios/types"},
 		UpdateTypes:     []string{"major", "minor"},
@@ -518,9 +518,9 @@ update-types:
 
 	// Test marshaling Group with empty AppliesTo field - should be omitted in output
 	groupWithEmptyAppliesTo := Group{
-		Separator:   "/",
-		Patterns:    []string{"webpack*"},
-		UpdateTypes: []string{"patch"},
+		DependencyType: "/",
+		Patterns:       []string{"webpack*"},
+		UpdateTypes:    []string{"patch"},
 	}
 
 	marshaledEmpty, err := yaml.Marshal(groupWithEmptyAppliesTo)
@@ -539,7 +539,7 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 	tests := []struct {
 		name     string
 		update   Update
-		expected map[string]Group
+		expected Groups
 	}{
 		{
 			name: "No groups",
@@ -555,31 +555,31 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 			update: Update{
 				PackageEcosystem: "npm",
 				Directory:        "/",
-				Groups:           map[string]Group{},
+				Groups:           Groups{},
 			},
-			expected: map[string]Group{},
+			expected: Groups{},
 		},
 		{
 			name: "Already prefixed groups",
 			update: Update{
 				PackageEcosystem: "npm",
 				Directory:        "/",
-				Groups: map[string]Group{
-					"01_frontend": {
+				Groups: Groups{
+					{Name: "01_frontend", Group: Group{
 						Patterns: []string{"react*", "vue*"},
-					},
-					"02_backend": {
+					}},
+					{Name: "02_backend", Group: Group{
 						Patterns: []string{"express*", "fastify*"},
-					},
+					}},
 				},
 			},
-			expected: map[string]Group{
-				"01_frontend": {
+			expected: Groups{
+				{Name: "01_frontend", Group: Group{
 					Patterns: []string{"react*", "vue*"},
-				},
-				"02_backend": {
+				}},
+				{Name: "02_backend", Group: Group{
 					Patterns: []string{"express*", "fastify*"},
-				},
+				}},
 			},
 		},
 		{
@@ -587,22 +587,22 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 			update: Update{
 				PackageEcosystem: "npm",
 				Directory:        "/",
-				Groups: map[string]Group{
-					"01_frontend": {
+				Groups: Groups{
+					{Name: "01_frontend", Group: Group{
 						Patterns: []string{"react*", "vue*"},
-					},
-					"backend": {
+					}},
+					{Name: "backend", Group: Group{
 						Patterns: []string{"express*", "fastify*"},
-					},
+					}},
 				},
 			},
-			expected: map[string]Group{
-				"01_frontend": {
+			expected: Groups{
+				{Name: "01_frontend", Group: Group{
 					Patterns: []string{"react*", "vue*"},
-				},
-				"02_backend": {
+				}},
+				{Name: "02_backend", Group: Group{
 					Patterns: []string{"express*", "fastify*"},
-				},
+				}},
 			},
 		},
 		{
@@ -610,28 +610,28 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 			update: Update{
 				PackageEcosystem: "npm",
 				Directory:        "/",
-				Groups: map[string]Group{
-					"frontend": {
+				Groups: Groups{
+					{Name: "frontend", Group: Group{
 						Patterns: []string{"react*", "vue*"},
-					},
-					"backend": {
+					}},
+					{Name: "backend", Group: Group{
 						Patterns: []string{"express*", "fastify*"},
-					},
-					"tooling": {
+					}},
+					{Name: "tooling", Group: Group{
 						Patterns: []string{"webpack*", "babel*"},
-					},
+					}},
 				},
 			},
-			expected: map[string]Group{
-				"01_backend": {
-					Patterns: []string{"express*", "fastify*"},
-				},
-				"02_frontend": {
+			expected: Groups{
+				{Name: "01_frontend", Group: Group{
 					Patterns: []string{"react*", "vue*"},
-				},
-				"03_tooling": {
+				}},
+				{Name: "02_backend", Group: Group{
+					Patterns: []string{"express*", "fastify*"},
+				}},
+				{Name: "03_tooling", Group: Group{
 					Patterns: []string{"webpack*", "babel*"},
-				},
+				}},
 			},
 		},
 		{
@@ -639,22 +639,22 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 			update: Update{
 				PackageEcosystem: "npm",
 				Directory:        "/",
-				Groups: map[string]Group{
-					"01_frontend": {
+				Groups: Groups{
+					{Name: "01_frontend", Group: Group{
 						Patterns: []string{"react*", "vue*"},
-					},
-					"01_backend": {
+					}},
+					{Name: "01_backend", Group: Group{
 						Patterns: []string{"express*", "fastify*"},
-					},
+					}},
 				},
 			},
-			expected: map[string]Group{
-				"01_backend": {
-					Patterns: []string{"express*", "fastify*"},
-				},
-				"02_frontend": {
+			expected: Groups{
+				{Name: "01_frontend", Group: Group{
 					Patterns: []string{"react*", "vue*"},
-				},
+				}},
+				{Name: "02_backend", Group: Group{
+					Patterns: []string{"express*", "fastify*"},
+				}},
 			},
 		},
 	}
