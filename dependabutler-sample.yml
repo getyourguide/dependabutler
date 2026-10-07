@@ -26,7 +26,7 @@ update-defaults:
 #
 #   - properties are applied in addition to those in the update-defaults section
 #
-#   - properties with sub-properties (schedule, commit-message) are overwritten as a whole
+#   - properties with sub-properties (schedule, commit-message, groups) are overwritten as a whole
 #
 update-overrides:
   pip:
@@ -122,7 +122,7 @@ pull-request-parameters:
 #
 # feature flags
 #
-stable-group-prefixes: true  # Ensures group names have numeric prefixes (01_, 02_, etc.)
+stable-group-prefixes: true  # Adds numeric prefixes (01_, 02_, etc.) to group names, in the order the groups are written
 update-missing-cooldown-settings: false  # When true, adds missing cooldown settings to existing updates; when false, only adds cooldown to new repos/sections
 
 #

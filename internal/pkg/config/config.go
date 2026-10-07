@@ -85,6 +85,7 @@ type UpdateDefaults struct {
 	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution"`
 	RebaseStrategy                string        `yaml:"rebase-strategy"`
 	Cooldown                      Cooldown      `yaml:"cooldown"`
+	Groups                        Groups        `yaml:"groups,omitempty"`
 }
 
 // DependabotConfig holds the configuration defined in dependabot.yml
@@ -113,20 +114,20 @@ type Ignore struct {
 
 // Update holds the config items of an update definition
 type Update struct {
-	PackageEcosystem              string           `yaml:"package-ecosystem"`
-	Directory                     string           `yaml:"directory,omitempty"`
-	Directories                   []string         `yaml:"directories,omitempty"`
-	Schedule                      Schedule         `yaml:"schedule,omitempty"`
-	Registries                    []string         `yaml:"registries,omitempty"`
-	CommitMessage                 CommitMessage    `yaml:"commit-message,omitempty"`
-	OpenPullRequestsLimit         *int             `yaml:"open-pull-requests-limit,omitempty"`
-	Assignees                     []string         `yaml:"assignees,omitempty"`
-	Allow                         []Allow          `yaml:"allow,omitempty"`
-	Ignore                        []Ignore         `yaml:"ignore,omitempty"`
-	Groups                        map[string]Group `yaml:"groups,omitempty"`
-	InsecureExternalCodeExecution string           `yaml:"insecure-external-code-execution,omitempty"`
-	Labels                        []string         `yaml:"labels,omitempty"`
-	Milestone                     int              `yaml:"milestone,omitempty"`
+	PackageEcosystem              string        `yaml:"package-ecosystem"`
+	Directory                     string        `yaml:"directory,omitempty"`
+	Directories                   []string      `yaml:"directories,omitempty"`
+	Schedule                      Schedule      `yaml:"schedule,omitempty"`
+	Registries                    []string      `yaml:"registries,omitempty"`
+	CommitMessage                 CommitMessage `yaml:"commit-message,omitempty"`
+	OpenPullRequestsLimit         *int          `yaml:"open-pull-requests-limit,omitempty"`
+	Assignees                     []string      `yaml:"assignees,omitempty"`
+	Allow                         []Allow       `yaml:"allow,omitempty"`
+	Ignore                        []Ignore      `yaml:"ignore,omitempty"`
+	Groups                        Groups        `yaml:"groups,omitempty"`
+	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution,omitempty"`
+	Labels                        []string      `yaml:"labels,omitempty"`
+	Milestone                     int           `yaml:"milestone,omitempty"`
 	PullRequestBranchName         struct {
 		Separator string         `yaml:"separator"`
 		Unknown   map[string]any `yaml:",inline"`
@@ -142,11 +143,12 @@ type Update struct {
 
 // Group holds the config items of a group definition
 type Group struct {
-	Separator       string         `yaml:"dependency-type,omitempty"`
+	DependencyType  string         `yaml:"dependency-type,omitempty"`
 	Patterns        []string       `yaml:"patterns,omitempty"`
 	ExcludePatterns []string       `yaml:"exclude-patterns,omitempty"`
 	UpdateTypes     []string       `yaml:"update-types,omitempty"`
 	AppliesTo       string         `yaml:"applies-to,omitempty"`
+	GroupBy         string         `yaml:"group-by,omitempty"`
 	Unknown         map[string]any `yaml:",inline"`
 }
 
@@ -286,6 +288,10 @@ func (config *ToolConfig) Parse(data []byte) error {
 
 	config.dropUnknownUpdateKeys()
 
+	if err := config.validateGroups(); err != nil {
+		return err
+	}
+
 	if config.ScheduleSlots != nil {
 		if err := config.ScheduleSlots.validate(); err != nil {
 			return err
@@ -315,6 +321,9 @@ func (config *ToolConfig) validateEnforce() error {
 	if util.Contains(fields, EnforceOpenPullRequestsLimit) && defaults.OpenPullRequestsLimit == nil {
 		return errors.New("enforcing the open-pull-requests-limit needs one in update-defaults")
 	}
+	if util.Contains(fields, EnforceGroups) && len(defaults.Groups) == 0 {
+		return errors.New("enforcing the groups needs groups in update-defaults")
+	}
 
 	return nil
 }
@@ -333,6 +342,10 @@ func dropUnknownKeysOf(section string, defaults *UpdateDefaults) {
 	dropUnknownKeys(section+".schedule", &defaults.Schedule.Unknown)
 	dropUnknownKeys(section+".commit-message", &defaults.CommitMessage.Unknown)
 	dropUnknownKeys(section+".cooldown", &defaults.Cooldown.Unknown)
+
+	for i := range defaults.Groups {
+		dropUnknownKeys(section+".groups."+defaults.Groups[i].Name, &defaults.Groups[i].Group.Unknown)
+	}
 }
 
 func dropUnknownKeys(section string, unknown *map[string]any) {
@@ -552,6 +565,7 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		RebaseStrategy:                toolConfig.UpdateDefaults.RebaseStrategy,
 		InsecureExternalCodeExecution: toolConfig.UpdateDefaults.InsecureExternalCodeExecution,
 		Cooldown:                      toolConfig.UpdateDefaults.Cooldown,
+		Groups:                        toolConfig.UpdateDefaults.Groups,
 	}
 	// apply override properties, if defined
 	overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]
@@ -565,6 +579,10 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		}
 
 		update.Schedule = *slotSchedule
+	}
+
+	if toolConfig.stableGroupPrefixes() {
+		ensureStableGroupPrefixes(&update)
 	}
 
 	fixNewUpdateConfig(&update, manifestType)
@@ -705,7 +723,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	}
 
 	// Handle stable group prefixes if enabled
-	if toolConfig.StableGroupPrefixes == nil || *toolConfig.StableGroupPrefixes {
+	if toolConfig.stableGroupPrefixes() {
 		for i := range config.Updates {
 			if len(config.Updates[i].Groups) > 0 {
 				ensureStableGroupPrefixes(&config.Updates[i])
@@ -774,6 +792,9 @@ func applyOverrides(update *Update, overrides UpdateDefaults) {
 	}
 	if hasCooldownConfig(overrides.Cooldown) {
 		update.Cooldown = overrides.Cooldown
+	}
+	if len(overrides.Groups) > 0 {
+		update.Groups = overrides.Groups
 	}
 }
 
@@ -849,7 +870,8 @@ func fixExistingUpdateConfig(update *Update) bool {
 }
 
 // ensureStableGroupPrefixes ensures all group names have a unique numeric prefix (01_, 02_, 03_, etc.)
-// If a group doesn't have a prefix, it adds one.
+// If a group doesn't have a prefix, it adds one. Groups are numbered in the order they are written, which is the order
+// Dependabot matches them in.
 func ensureStableGroupPrefixes(update *Update) {
 	if len(update.Groups) == 0 {
 		return
@@ -864,7 +886,8 @@ func ensureStableGroupPrefixes(update *Update) {
 	baseNameToOrigName := make(map[string]string)
 	origNames := make([]string, 0, len(update.Groups))
 
-	for name := range update.Groups {
+	for _, named := range update.Groups {
+		name := named.Name
 		// Check if name already has a numeric prefix
 		matches := prefixRegex.FindStringSubmatch(name)
 		var baseName string
@@ -894,11 +917,8 @@ func ensureStableGroupPrefixes(update *Update) {
 		return
 	}
 
-	// Sort original names for stable ordering
-	sort.Strings(origNames)
-
-	// Create a new map with properly prefixed groups
-	newGroups := make(map[string]Group)
+	// Create new groups with proper prefixes, in the order they are written
+	newGroups := make(Groups, 0, len(origNames))
 	for i, origName := range origNames {
 		baseName := origName
 		// If it has a prefix, extract the base name
@@ -907,10 +927,11 @@ func ensureStableGroupPrefixes(update *Update) {
 			baseName = matches[2]
 		}
 		newName := fmt.Sprintf("%02d_%s", i+1, baseName)
-		newGroups[newName] = update.Groups[origName]
+		group, _ := update.Groups.Get(origName)
+		newGroups = append(newGroups, NamedGroup{Name: newName, Group: group})
 	}
 
-	// Replace the groups with the new prefixed map
+	// Replace the groups with the new prefixed ones
 	update.Groups = newGroups
 }
 

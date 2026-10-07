@@ -19,7 +19,30 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 ### Rewriting dependabot.yml
 When dependabutler changes a `dependabot.yml`, it writes the whole file again. Every key is kept, including keys
 dependabutler does not know, which are written after the known ones of the same section. Update entries are sorted by
-ecosystem and directory. Comments are not kept.
+ecosystem and directory. Groups keep the order they are written in, since Dependabot puts a dependency in the first
+group it matches. Comments are not kept.
+
+### Groups
+`update-defaults` and `update-overrides` can set `groups` for new update entries. The groups of an override replace the
+default groups as a whole:
+
+```yaml
+update-defaults:
+  groups:
+    minor-patch: {patterns: ["*"], update-types: [minor, patch]}
+update-overrides:
+  npm:
+    groups:
+      minor-patch: {patterns: ["*"], update-types: [minor, patch]}
+      development-major: {dependency-type: development, update-types: [major]}
+```
+
+Keys of a group that dependabutler does not know are dropped with a warning, so a typo is not written into every
+repository. The configuration file is rejected when:
+- a group has `dependency-type` in `update-defaults`, or in `update-overrides` of an ecosystem other than bundler,
+  composer, maven, mix, npm and pip, which Dependabot supports it for;
+- a group matching every dependency (`patterns: ["*"]` and nothing else) comes before another group that applies to the
+  same updates: Dependabot puts a dependency in the first group it matches, so the later group would stay empty.
 
 ### Schedule slots
 With `schedule-slots` in the configuration file, new update entries do not get the `schedule` of `update-defaults`.
@@ -76,8 +99,8 @@ enforce:
   repos-file: enforce-repos.txt
 ```
 
-- `fields` can hold `schedule`, `cooldown` and `open-pull-requests-limit`. Each field is replaced as a whole, so a
-  `cooldown` also gets the configured `include` and `exclude` lists. Every other key is left as it is.
+- `fields` can hold `schedule`, `cooldown`, `open-pull-requests-limit` and `groups`. Each field is replaced as a whole,
+  so a `cooldown` also gets the configured `include` and `exclude` lists. Every other key is left as it is.
 - An entry is changed only if a field differs, so a repository that already matches gets no pull request.
 - `exceptions-file` lists repositories that keep their own values for some fields. `repo`, `fields`, `reason` and
   `owner` are required:
@@ -91,8 +114,8 @@ enforce:
   it, every repository is enforced. Other changes, like new update entries, still apply to every repository.
 - Both files are relative to the configuration file. Repository names match regardless of case.
 - Each enforced field needs a value to enforce: the schedule needs `schedule-slots` or a `schedule` in
-  `update-defaults`; the cooldown and the open pull request limit need theirs in `update-defaults`. When the cooldown is
-  enforced, `update-missing-cooldown-settings` does not fill in its missing fields.
+  `update-defaults`; the cooldown, the open pull request limit and the groups need theirs in `update-defaults`. When the
+  cooldown is enforced, `update-missing-cooldown-settings` does not fill in its missing fields.
 
 The pull request lists the reset settings. When they are the only change, `pull-request-parameters` can set its own
 title, commit message and a note, for example to explain why and how to request an exception:
@@ -119,7 +142,7 @@ an open dependabutler pull request keeps its title when enforced settings are ad
 | org                 | ²         |                     | organisation name on GitHub                   |
 | repo                | ³         |                     | name of the repository to scan; in local mode, the name used for schedule slots |
 | repoFile            | ³         |                     | file containing repositories, one per line    |
-| stable-group-prefixes | no      | true                | ensures group names have numeric prefixes (01_, 02_, etc.) |
+| stable-group-prefixes | no      | true                | ensures group names have numeric prefixes (01_, 02_, etc.), numbered in the order the groups are written |
 | update-missing-cooldown-settings | no | true          | update existing manifests adding default settings |
 
 ¹ mandatory for local mode  
