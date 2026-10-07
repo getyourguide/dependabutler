@@ -154,6 +154,32 @@ func loadScheduleSlots(toolConfig *config.ToolConfig, configFile string) error {
 	return nil
 }
 
+// loadEnforce reads the exceptions-file and repos-file of enforce, relative to the tool config, and logs the settings.
+func loadEnforce(toolConfig *config.ToolConfig, configFile string) error {
+	enforce := toolConfig.Enforce
+	if enforce == nil {
+		log.Printf("INFO  Enforcement is off.")
+		return nil
+	}
+
+	if err := enforce.LoadFiles(filepath.Dir(configFile)); err != nil {
+		return err
+	}
+
+	log.Printf("INFO  Enforcement is on for %v, exceptions-file %q, repos-file %q.", enforce.Fields, enforce.ExceptionsFile, enforce.ReposFile)
+	return nil
+}
+
+// pullRequestConfig returns the tool config to create the PR with: the enforce title and commit message when enforced
+// fields are the only changes.
+func pullRequestConfig(toolConfig config.ToolConfig, changeInfo config.ChangeInfo) config.ToolConfig {
+	if changeInfo.OnlyEnforced() {
+		toolConfig.PullRequestParameters = toolConfig.PullRequestParameters.ForEnforcement()
+	}
+
+	return toolConfig
+}
+
 // slotSchedule returns the schedule slot of a repo, or nil when schedule slots are off. Rulesets are only read when
 // a window selects repos by ruleset.
 func slotSchedule(slots *config.ScheduleSlots, repo string, readRulesets func() ([]string, error)) (*config.Schedule, error) {
@@ -308,11 +334,12 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 	// update the configuration and create a PR
 	loadFileParameters := config.LoadFileContentParameters{Client: gitHubClient, Org: org, Repo: repo}
 	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{Client: gitHubClient, Org: org, Repo: repo}
-	yamlContent, changeInfo := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, schedule, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
+	enforcedFields := toolConfig.Enforce.FieldsFor(repo)
+	yamlContent, changeInfo := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, schedule, enforcedFields, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
 	if yamlContent != nil {
-		prDesc := githubapi.CreatePRDescription(changeInfo)
+		prDesc := githubapi.CreatePRDescription(changeInfo, toolConfig.PullRequestParameters.EnforcePRNote)
 		if execute {
-			if err := gitHubClient.CreateOrUpdatePullRequest(org, repo, loaded.defaultBranch, prDesc, string(yamlContent), toolConfig); err != nil {
+			if err := gitHubClient.CreateOrUpdatePullRequest(org, repo, loaded.defaultBranch, prDesc, string(yamlContent), pullRequestConfig(toolConfig, changeInfo)); err != nil {
 				if strings.Contains(err.Error(), "pull request already exists") {
 					log.Printf("WARN  There's an open pull request already on repo %v. Close or merge it first.", repo)
 				} else if strings.Contains(err.Error(), "Resource not accessible") {
@@ -366,7 +393,8 @@ func reportRemoteRepo(gitHubClient *githubapi.Client, org string, repo string, o
 }
 
 func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string, repo string) (success bool) {
-	schedule, err := slotSchedule(toolConfig.ScheduleSlots, localRepoName(repo, dir), func() ([]string, error) {
+	repo = localRepoName(repo, dir)
+	schedule, err := slotSchedule(toolConfig.ScheduleSlots, repo, func() ([]string, error) {
 		log.Printf("WARN  Rulesets are not read in local mode, only repos-files select a schedule slots window.")
 		return nil, nil
 	})
@@ -395,7 +423,7 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string, re
 	// update the configuration and save it back
 	loadFileParameters := config.LoadFileContentParameters{Directory: dir}
 	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{Directory: dir}
-	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, schedule, dir, LoadLocalFileContent, loadFileParameters, CheckLocalDirectoryExists, checkDirectoryExistsParameters)
+	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, schedule, toolConfig.Enforce.FieldsFor(repo), dir, LoadLocalFileContent, loadFileParameters, CheckLocalDirectoryExists, checkDirectoryExistsParameters)
 	if yamlContent != nil {
 		if execute {
 			if err := util.MakeDirIfNotExists(dirPath); err != nil {
@@ -436,6 +464,10 @@ func main() {
 	if mode != "report" {
 		if err := loadScheduleSlots(toolConfig, configFile); err != nil {
 			log.Printf("ERROR Could not load the schedule slots: %v", err)
+			os.Exit(1)
+		}
+		if err := loadEnforce(toolConfig, configFile); err != nil {
+			log.Printf("ERROR Could not load the enforce files: %v", err)
 			os.Exit(1)
 		}
 	}
@@ -479,7 +511,7 @@ func main() {
 }
 
 // GetUpdatedConfigYaml returns the new .dependabot.yml file content, based on the current content and the manifests found.
-func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, slotSchedule *config.Schedule, repo string,
+func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, slotSchedule *config.Schedule, enforcedFields []string, repo string,
 	loadFileFn config.LoadFileContent, loadFileParams config.LoadFileContentParameters, checkDirectoryExistsFn config.CheckDirectoryExists, checkDirectoryExistsParams config.CheckDirectoryExistsParameters,
 ) ([]byte, config.ChangeInfo) {
 	dependabotConfig, err := config.ParseDependabotConfig(currentConfig)
@@ -487,8 +519,8 @@ func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, too
 		log.Printf("ERROR Could not parse current config for %v: %v", repo, err)
 		return nil, config.ChangeInfo{}
 	}
-	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, slotSchedule, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
-	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 || len(changeInfo.FixedUpdates) > 0 || len(changeInfo.RemovedUpdates) > 0 || len(changeInfo.RemovedRegistries) > 0 {
+	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, slotSchedule, enforcedFields, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
+	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 || len(changeInfo.FixedUpdates) > 0 || len(changeInfo.RemovedUpdates) > 0 || len(changeInfo.RemovedRegistries) > 0 || len(changeInfo.EnforcedUpdates) > 0 {
 		// at least one item in the update block is needed
 		return dependabotConfig.ToYaml(), changeInfo
 	}

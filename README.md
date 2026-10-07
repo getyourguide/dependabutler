@@ -64,6 +64,50 @@ schedule-slots:
 - Only new update entries get a slot. A schedule set in `update-overrides` is ignored for them, with a warning.
   Existing entries keep their schedule.
 
+### Enforcing settings on existing entries
+By default, dependabutler applies the settings of the configuration file only to update entries it creates. With
+`enforce`, it also sets the listed fields of existing entries to the value a new entry of the same ecosystem would get:
+`update-defaults`, then `update-overrides`, then the schedule slot.
+
+```yaml
+enforce:
+  fields: [schedule, cooldown, open-pull-requests-limit]
+  exceptions-file: enforce-exceptions.yml
+  repos-file: enforce-repos.txt
+```
+
+- `fields` can hold `schedule`, `cooldown` and `open-pull-requests-limit`. Each field is replaced as a whole, so a
+  `cooldown` also gets the configured `include` and `exclude` lists. Every other key is left as it is.
+- An entry is changed only if a field differs, so a repository that already matches gets no pull request.
+- `exceptions-file` lists repositories that keep their own values for some fields. `repo`, `fields`, `reason` and
+  `owner` are required:
+  ```yaml
+  - repo: some-repo
+    fields: [cooldown]
+    reason: why the repository needs its own values
+    owner: the team responsible for it
+  ```
+- `repos-file` limits enforcement to the listed repositories, one per line, for example to roll it out in steps. Without
+  it, every repository is enforced. Other changes, like new update entries, still apply to every repository.
+- Both files are relative to the configuration file. Repository names match regardless of case.
+- Each enforced field needs a value to enforce: the schedule needs `schedule-slots` or a `schedule` in
+  `update-defaults`; the cooldown and the open pull request limit need theirs in `update-defaults`. When the cooldown is
+  enforced, `update-missing-cooldown-settings` does not fill in its missing fields.
+
+The pull request lists the reset settings. When they are the only change, `pull-request-parameters` can set its own
+title, commit message and a note, for example to explain why and how to request an exception:
+
+```yaml
+pull-request-parameters:
+  enforce-pr-title: "[dependabutler] apply the default dependabot settings"
+  enforce-commit-message: "[dependabutler] apply the default dependabot settings"
+  enforce-pr-note: |
+    These settings follow the defaults. To keep your own, add the repository to the exceptions file.
+```
+
+The note is added to every pull request with reset settings. The title is set only when the pull request is created:
+an open dependabutler pull request keeps its title when enforced settings are added to it.
+
 ### Parameters
 
 | parameter           | mandatory | default             | description                                   |
