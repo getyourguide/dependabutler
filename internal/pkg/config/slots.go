@@ -206,21 +206,32 @@ func (slots *ScheduleSlots) LoadReposFiles(configDir string) error {
 			continue
 		}
 
-		path := filepath.Join(configDir, window.ReposFile)
-		lines, err := util.ReadLinesFromFile(path)
+		repos, err := readRepoNames(filepath.Join(configDir, window.ReposFile))
 		if err != nil {
-			return fmt.Errorf("could not read repos-file %v of window %q: %w", path, window.Name, err)
+			return fmt.Errorf("could not read the repos-file of window %q: %w", window.Name, err)
 		}
 
-		window.repos = map[string]bool{}
-		for _, line := range lines {
-			if name := strings.ToLower(strings.TrimSpace(line)); name != "" {
-				window.repos[name] = true
-			}
-		}
+		window.repos = repos
 	}
 
 	return nil
+}
+
+// readRepoNames reads a file with one repository name per line, in lower case. Blank lines are skipped.
+func readRepoNames(path string) (map[string]bool, error) {
+	lines, err := util.ReadLinesFromFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	repos := map[string]bool{}
+	for _, line := range lines {
+		if name := strings.ToLower(strings.TrimSpace(line)); name != "" {
+			repos[name] = true
+		}
+	}
+
+	return repos, nil
 }
 
 // NeedsRulesets returns whether the rulesets of a repository can change its window: not when the repos-file of a
