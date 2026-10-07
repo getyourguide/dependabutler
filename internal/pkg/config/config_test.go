@@ -348,7 +348,7 @@ func TestAddManifest(t *testing.T) {
 		{"docker", "other_app/sub/folder/Dockerfile", 3, "/other_app/sub/folder", "weekly"},
 	} {
 		changeInfo := ChangeInfo{}
-		config.ProcessManifest(tt.manifestFile, tt.manifestType, toolConfig, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
+		config.ProcessManifest(tt.manifestFile, tt.manifestType, toolConfig, nil, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
 		// check the number of expected elements
 		gotCount := len(config.Updates)
 		if gotCount != tt.expectedCount {
@@ -786,7 +786,7 @@ func TestCoolDownWithUpdateFlagFalse(t *testing.T) {
 			},
 		}
 
-		update := createUpdateEntry("npm", "/", toolConfig)
+		update := createUpdateEntry("npm", "/", toolConfig, nil)
 
 		expected := Cooldown{
 			SemverMajorDays: 21,
@@ -1201,13 +1201,75 @@ func TestCreateUpdateEntryAppliesScheduleAndCommitMessageOverrides(t *testing.T)
 		},
 	}
 
-	update := createUpdateEntry("npm", "/", toolConfig)
+	update := createUpdateEntry("npm", "/", toolConfig, nil)
 
 	if update.Schedule.Interval != "cron" || update.Schedule.Cronjob != "0 3 * * 1" || update.Schedule.Day != "" {
 		t.Errorf("schedule override not applied, got %+v", update.Schedule)
 	}
 	if update.CommitMessage.Prefix != "npm" {
 		t.Errorf("commit-message override not applied, got %+v", update.CommitMessage)
+	}
+}
+
+func TestCreateUpdateEntryReplacesTheScheduleWithTheSlot(t *testing.T) {
+	toolConfig := ToolConfig{
+		UpdateDefaults: UpdateDefaults{
+			Schedule:      Schedule{Interval: "weekly", Day: "sunday", Time: "05:00", Timezone: "Europe/Berlin"},
+			CommitMessage: CommitMessage{Prefix: "default"},
+		},
+		UpdateOverrides: map[string]UpdateDefaults{
+			"docker": {Schedule: Schedule{Interval: "daily"}},
+		},
+	}
+	slotSchedule := &Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
+
+	for _, ecosystem := range []string{"npm", "docker"} {
+		update := createUpdateEntry(ecosystem, "/", toolConfig, slotSchedule)
+
+		if !reflect.DeepEqual(update.Schedule, *slotSchedule) {
+			t.Errorf("%v schedule = %+v, expected the slot %+v", ecosystem, update.Schedule, *slotSchedule)
+		}
+		if update.CommitMessage.Prefix != "default" {
+			t.Errorf("%v commit-message = %+v, expected the default", ecosystem, update.CommitMessage)
+		}
+	}
+}
+
+func TestUpdateConfigStampsTheSlotOnNewEntriesOnly(t *testing.T) {
+	dependabotConfig, err := ParseDependabotConfig([]byte(`
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: sunday
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	slotSchedule := &Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
+	directoryExists := func(string, CheckDirectoryExistsParameters) bool { return true }
+
+	dependabotConfig.UpdateConfig(map[string]string{"package.json": "npm", "go.mod": "gomod"}, ToolConfig{}, slotSchedule,
+		LoadFileContentDummy, LoadFileContentParameters{}, directoryExists, CheckDirectoryExistsParameters{})
+
+	for _, update := range dependabotConfig.Updates {
+		switch update.PackageEcosystem {
+		case "npm":
+			if update.Schedule.Interval != "weekly" || update.Schedule.Day != "sunday" {
+				t.Errorf("existing npm entry changed to %+v", update.Schedule)
+			}
+		case "gomod":
+			if !reflect.DeepEqual(update.Schedule, *slotSchedule) {
+				t.Errorf("new gomod entry schedule = %+v, expected the slot", update.Schedule)
+			}
+		}
+	}
+
+	if len(dependabotConfig.Updates) != 2 {
+		t.Errorf("expected 2 update entries, got %d", len(dependabotConfig.Updates))
 	}
 }
 
@@ -1238,8 +1300,8 @@ update-overrides:
 		t.Fatalf("ParseToolConfig() failed: %v", err)
 	}
 
-	npmUpdate := createUpdateEntry("npm", "/", *toolConfig)
-	pipUpdate := createUpdateEntry("pip", "/", *toolConfig)
+	npmUpdate := createUpdateEntry("npm", "/", *toolConfig, nil)
+	pipUpdate := createUpdateEntry("pip", "/", *toolConfig, nil)
 
 	expectedNpmSchedule := Schedule{Interval: "weekly", Timezone: "UTC"}
 	if !reflect.DeepEqual(npmUpdate.Schedule, expectedNpmSchedule) {

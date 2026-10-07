@@ -44,6 +44,7 @@ type ToolConfig struct {
 	PullRequestParameters         PullRequestParameters        `yaml:"pull-request-parameters"`
 	StableGroupPrefixes           *bool                        `yaml:"stable-group-prefixes,omitempty"`
 	UpdateMissingCooldownSettings *bool                        `yaml:"update-missing-cooldown-settings,omitempty"`
+	ScheduleSlots                 *ScheduleSlots               `yaml:"schedule-slots,omitempty"`
 }
 
 // DefaultRegistries holds the default registries for new update definitions
@@ -271,6 +272,11 @@ func (config *ToolConfig) Parse(data []byte) error {
 	}
 
 	config.dropUnknownUpdateKeys()
+
+	if config.ScheduleSlots != nil {
+		return config.ScheduleSlots.validate()
+	}
+
 	return nil
 }
 
@@ -444,7 +450,7 @@ func GetManifestPath(manifestFile string, manifestType string) string {
 
 // ProcessManifest adds config for a new manifest file to dependabot.yml if necessary
 func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestType string, toolConfig ToolConfig,
-	changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
+	slotSchedule *Schedule, changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
 ) {
 	if manifestFile == "" || manifestType == "" {
 		return
@@ -485,7 +491,7 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 	// check if the manifest itself is covered, and add it if necessary
 	if !config.IsManifestCovered(manifestFile, manifestType, updateRegistries) {
 		// create the new update section using the default properties
-		update := createUpdateEntry(manifestType, manifestPath, toolConfig)
+		update := createUpdateEntry(manifestType, manifestPath, toolConfig, slotSchedule)
 		// add new registries if required
 		if len(updateRegistries) > 0 {
 			update.Registries = updateRegistries
@@ -496,8 +502,8 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 	}
 }
 
-// createUpdateEntry creates a new update entry for a manifest file
-func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig) Update {
+// createUpdateEntry creates a new update entry for a manifest file. A slot schedule, if set, replaces any other schedule.
+func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig, slotSchedule *Schedule) Update {
 	update := Update{
 		PackageEcosystem:              manifestType,
 		Directory:                     manifestPath,
@@ -509,9 +515,19 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		Cooldown:                      toolConfig.UpdateDefaults.Cooldown,
 	}
 	// apply override properties, if defined
-	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
+	overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]
+	if hasOverrides {
 		applyOverrides(&update, overrides)
 	}
+
+	if slotSchedule != nil {
+		if hasOverrides && hasScheduleConfig(overrides.Schedule) {
+			log.Printf("WARN  The schedule override for %v is ignored, schedule-slots sets the schedule.", manifestType)
+		}
+
+		update.Schedule = *slotSchedule
+	}
+
 	fixNewUpdateConfig(&update, manifestType)
 	return update
 }
@@ -605,7 +621,7 @@ func (config *DependabotConfig) ToYaml() []byte {
 }
 
 // UpdateConfig updates a dependabot config with a list of manifests found and the tool's config.
-func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig,
+func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig, slotSchedule *Schedule,
 	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters, checkDirectoryExists CheckDirectoryExists,
 	checkDirectoryExistsParams CheckDirectoryExistsParameters,
 ) ChangeInfo {
@@ -650,7 +666,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 
 	// Iterate manifest files and check if they are covered by the current config file
 	for _, manifest := range manifestsSorted {
-		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, &changeInfo, loadFileFn, loadFileParams)
+		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, slotSchedule, &changeInfo, loadFileFn, loadFileParams)
 	}
 
 	// Handle stable group prefixes if enabled

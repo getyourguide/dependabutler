@@ -21,6 +21,49 @@ When dependabutler changes a `dependabot.yml`, it writes the whole file again. E
 dependabutler does not know, which are written after the known ones of the same section. Update entries are sorted by
 ecosystem and directory. Comments are not kept.
 
+### Schedule slots
+With `schedule-slots` in the configuration file, new update entries do not get the `schedule` of `update-defaults`.
+Each repository gets its own slot instead, so that Dependabot does not run for all repositories at the same time:
+
+```yaml
+schedule:
+  interval: cron
+  cronjob: "0 4 * * 2,5"
+  timezone: Europe/Berlin
+```
+
+Every repository runs twice a week, at the same hour, on a weekday and on the weekday three weekdays later (Monday and
+Thursday, Tuesday and Friday, Wednesday and Monday, Thursday and Tuesday, Friday and Wednesday). Each weekday is part of
+exactly two pairs, so every weekday gets about the same number of repositories.
+
+```yaml
+schedule-slots:
+  salt: "01J9Z3K4M5N6P7Q8R9S0T1V2W3"
+  windows:
+    - name: office-hours
+      hours: [10, 11, 13, 14, 15]
+      timezone: Europe/Berlin
+      rulesets: [audited]
+      repos-file: office-hours-repos.txt
+    - name: early
+      hours: [2, 3, 4, 5, 6, 7, 8]
+      timezone: Europe/Berlin
+```
+
+- A repository uses the first window that selects it: an active ruleset in `rulesets` applies to it (organization
+  rulesets included), or `repos-file` lists it. The last window has neither and holds every other repository.
+- `repos-file` is relative to the configuration file and lists one repository name per line. Blank lines are skipped.
+- Rulesets are read with one API call per repository, only when a window uses `rulesets`. If they cannot be read, the
+  repository is skipped and counted as failed, rather than placed in the wrong window. In local mode rulesets are not
+  read, and the repository name is `repo`, or the name of `dir` if `repo` is not set.
+- The slot is `FNV-1a 32(salt + ":" + repo) mod (5 × number of hours)` of the window, with `repo` in lower case: the
+  weekday pair is the result divided by the number of hours, the hour is the remainder. Repository names in
+  `repos-file` also match regardless of case. Adding or removing a repository does not move any other
+  one. Hashing does not spread repositories perfectly evenly: to reduce the busiest slot, try many salts against the
+  real repository names once, and keep the best. Changing the salt moves every repository.
+- Only new update entries get a slot. A schedule set in `update-overrides` is ignored for them, with a warning.
+  Existing entries keep their schedule.
+
 ### Parameters
 
 | parameter           | mandatory | default             | description                                   |
@@ -30,7 +73,7 @@ ecosystem and directory. Comments are not kept.
 | execute             | yes       | false               | true: create PR / write file; false: log-only |
 | dir                 | ¹         | *current directory* | directory containing repositories             |
 | org                 | ²         |                     | organisation name on GitHub                   |
-| repo                | ³         |                     | name of the repository to scan                |
+| repo                | ³         |                     | name of the repository to scan; in local mode, the name used for schedule slots |
 | repoFile            | ³         |                     | file containing repositories, one per line    |
 | stable-group-prefixes | no      | true                | ensures group names have numeric prefixes (01_, 02_, etc.) |
 | update-missing-cooldown-settings | no | true          | update existing manifests adding default settings |
