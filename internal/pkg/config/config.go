@@ -44,6 +44,7 @@ type ToolConfig struct {
 	PullRequestParameters         PullRequestParameters        `yaml:"pull-request-parameters"`
 	StableGroupPrefixes           *bool                        `yaml:"stable-group-prefixes,omitempty"`
 	UpdateMissingCooldownSettings *bool                        `yaml:"update-missing-cooldown-settings,omitempty"`
+	ScheduleSlots                 *ScheduleSlots               `yaml:"schedule-slots,omitempty"`
 }
 
 // DefaultRegistries holds the default registries for new update definitions
@@ -271,6 +272,11 @@ func (config *ToolConfig) Parse(data []byte) error {
 	}
 
 	config.dropUnknownUpdateKeys()
+
+	if config.ScheduleSlots != nil {
+		return config.ScheduleSlots.validate()
+	}
+
 	return nil
 }
 
