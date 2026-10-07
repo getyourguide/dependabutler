@@ -149,3 +149,12 @@ Initial version.
   one of several windows of hours. A window selects repositories by ruleset or by a file listing them. Off unless the
   configuration file has the block. See "Schedule slots" in the README.
 - `-repo` sets the repository name used for schedule slots in local mode.
+
+## v0.12.0
+
+- Added `enforce`: sets `schedule`, `cooldown` and `open-pull-requests-limit` of existing update entries to the
+  configured values. Repositories can keep their own values through an exceptions file, and enforcement can be limited
+  to a list of repositories. Off unless the configuration file has the block. See "Enforcing settings on existing
+  entries" in the README.
+- Added `enforce-pr-title`, `enforce-commit-message` and `enforce-pr-note` to `pull-request-parameters`, used when
+  enforced settings are the only change.
