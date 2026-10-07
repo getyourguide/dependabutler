@@ -62,6 +62,9 @@ type PullRequestParameters struct {
 	BranchNameRandomSuffix bool     `yaml:"branch-name-random-suffix"`
 	SleepAfterPRAction     int      `yaml:"sleep-after-pr-action"`
 	PRLabels               []string `yaml:"pr-labels,omitempty"`
+	EnforceCommitMessage   string   `yaml:"enforce-commit-message,omitempty"`
+	EnforcePRTitle         string   `yaml:"enforce-pr-title,omitempty"`
+	EnforcePRNote          string   `yaml:"enforce-pr-note,omitempty"`
 }
 
 // DefaultRegistry holds the config items of a default registry

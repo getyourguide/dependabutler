@@ -338,3 +338,48 @@ func TestUpdateConfigEnforcedCooldownIsNotFilledIn(t *testing.T) {
 		t.Errorf("FixedUpdates = %+v, expected the enforced cooldown to replace filling in missing fields", changeInfo.FixedUpdates)
 	}
 }
+
+func TestOnlyEnforced(t *testing.T) {
+	enforced := []EnforcedUpdateInfo{{Type: "npm", Directory: "/", Fields: []string{"cooldown"}}}
+
+	for _, tt := range []struct {
+		name       string
+		changeInfo ChangeInfo
+		expected   bool
+	}{
+		{"only enforcement", ChangeInfo{EnforcedUpdates: enforced}, true},
+		{"enforcement and a new update", ChangeInfo{EnforcedUpdates: enforced, NewUpdates: []UpdateInfo{{Type: "gomod"}}}, false},
+		{"enforcement and a fixed update", ChangeInfo{EnforcedUpdates: enforced, FixedUpdates: []UpdateInfo{{Type: "npm"}}}, false},
+		{"no enforcement", ChangeInfo{NewUpdates: []UpdateInfo{{Type: "gomod"}}}, false},
+	} {
+		if got := tt.changeInfo.OnlyEnforced(); got != tt.expected {
+			t.Errorf("%v: OnlyEnforced() = %v, expected %v", tt.name, got, tt.expected)
+		}
+	}
+}
+
+func TestForEnforcementUsesTheEnforceTitleAndCommitMessage(t *testing.T) {
+	params := PullRequestParameters{
+		PRTitle:              "update",
+		CommitMessage:        "update",
+		EnforcePRTitle:       "enforce",
+		EnforceCommitMessage: "enforce commit",
+		PRLabels:             []string{"automerge"},
+	}
+
+	got := params.ForEnforcement()
+
+	if got.PRTitle != "enforce" || got.CommitMessage != "enforce commit" || !reflect.DeepEqual(got.PRLabels, []string{"automerge"}) {
+		t.Errorf("ForEnforcement() = %+v, expected the enforce title and commit message with the same labels", got)
+	}
+}
+
+func TestForEnforcementKeepsTheDefaultsWhenNotSet(t *testing.T) {
+	params := PullRequestParameters{PRTitle: "update", CommitMessage: "update commit"}
+
+	got := params.ForEnforcement()
+
+	if got.PRTitle != "update" || got.CommitMessage != "update commit" {
+		t.Errorf("ForEnforcement() = %+v, expected the default title and commit message", got)
+	}
+}

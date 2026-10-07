@@ -196,7 +196,7 @@ func (client *Client) CreateOrUpdatePullRequest(org string, repo string, baseBra
 }
 
 // CreatePRDescription renders the body of the PR to be created.
-func CreatePRDescription(changeInfo config.ChangeInfo) string {
+func CreatePRDescription(changeInfo config.ChangeInfo, enforceNote string) string {
 	lines := []string{"### dependabutler has created this PR to update `.github/dependabot.yml`"}
 	if len(changeInfo.NewRegistries) > 0 {
 		lines = append(lines, "")
@@ -243,9 +243,24 @@ func CreatePRDescription(changeInfo config.ChangeInfo) string {
 			lines = append(lines, fmt.Sprintf("| %v | `%v` |", update.Type, update.Directory))
 		}
 	}
-	lines = append(lines, "")
-	lines = append(lines, "#### note")
-	lines = append(lines, "* Check the default settings applied (schedule, open-pull-requests-limit, etc.) and change if required.")
+	if len(changeInfo.EnforcedUpdates) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "#### 📏 settings reset to the configured values")
+		lines = append(lines, "| type | directory | settings |")
+		lines = append(lines, "| - | - | - |")
+		for _, update := range changeInfo.EnforcedUpdates {
+			lines = append(lines, fmt.Sprintf("| %v | `%v` | %v |", update.Type, update.Directory, strings.Join(update.Fields, ", ")))
+		}
+
+		if enforceNote != "" {
+			lines = append(lines, "", strings.TrimSpace(enforceNote))
+		}
+	} else {
+		lines = append(lines, "")
+		lines = append(lines, "#### note")
+		lines = append(lines, "* Check the default settings applied (schedule, open-pull-requests-limit, etc.) and change if required.")
+	}
+
 	return strings.Join(lines, "\n")
 }
 

@@ -187,3 +187,23 @@ func sameYaml(a any, b any) bool {
 
 	return aErr == nil && bErr == nil && bytes.Equal(aYaml, bYaml)
 }
+
+// OnlyEnforced returns whether enforced fields of existing updates are the only changes.
+func (changeInfo ChangeInfo) OnlyEnforced() bool {
+	otherChanges := len(changeInfo.NewRegistries) + len(changeInfo.RemovedRegistries) + len(changeInfo.NewUpdates) +
+		len(changeInfo.FixedUpdates) + len(changeInfo.RemovedUpdates)
+
+	return len(changeInfo.EnforcedUpdates) > 0 && otherChanges == 0
+}
+
+// ForEnforcement returns the parameters of a PR that only enforces fields: the enforce title and commit message, if set.
+func (params PullRequestParameters) ForEnforcement() PullRequestParameters {
+	if params.EnforcePRTitle != "" {
+		params.PRTitle = params.EnforcePRTitle
+	}
+	if params.EnforceCommitMessage != "" {
+		params.CommitMessage = params.EnforceCommitMessage
+	}
+
+	return params
+}
