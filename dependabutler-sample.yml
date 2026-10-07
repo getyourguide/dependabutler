@@ -88,6 +88,10 @@ pull-request-parameters:
   # labels applied to PRs created by dependabutler; defaults to [dependabutler] if omitted
   pr-labels:
     - dependabutler
+  # used instead when settings reset by enforce are the only change; the note is added to the description
+  # enforce-pr-title: "[dependabutler] apply the default dependabot settings"
+  # enforce-commit-message: "[dependabutler] apply the default dependabot settings"
+  # enforce-pr-note: "These settings follow the defaults. To keep your own, add the repository to the exceptions file."
 
 #
 # schedule slots: give every new update entry its own cron slot instead of the default schedule
@@ -109,6 +113,14 @@ pull-request-parameters:
 #       days: [monday, tuesday, wednesday, thursday, friday]
 #       runs-per-week: 2
 #       timezone: Europe/Berlin
+
+#
+# enforce: set these fields of existing update entries to the configured values, see README.md
+#
+# enforce:
+#   fields: [schedule, cooldown, open-pull-requests-limit]
+#   exceptions-file: enforce-exceptions.yml   # repos that keep their own values for some fields
+#   repos-file: enforce-repos.txt             # optional: enforce only these repos
 
 #
 # feature flags
