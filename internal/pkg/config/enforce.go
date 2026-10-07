@@ -19,9 +19,12 @@ const (
 	EnforceCooldown              = "cooldown"
 	EnforceOpenPullRequestsLimit = "open-pull-requests-limit"
 	EnforceGroups                = "groups"
+	EnforceDirectoryGrouping     = "directory-grouping"
 )
 
-var enforceableFields = []string{EnforceSchedule, EnforceCooldown, EnforceOpenPullRequestsLimit, EnforceGroups}
+var enforceableFields = []string{
+	EnforceSchedule, EnforceCooldown, EnforceOpenPullRequestsLimit, EnforceGroups, EnforceDirectoryGrouping,
+}
 
 // Enforce lists the fields of existing update entries that get the values a new entry would get.
 type Enforce struct {
