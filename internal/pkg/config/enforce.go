@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,4 +140,50 @@ func (enforce *Enforce) FieldsFor(repo string) []string {
 	}
 
 	return fields
+}
+
+// enforceUpdateConfig sets the enforced fields of an existing update to the values a new update of its ecosystem would
+// get, and returns the fields that changed.
+func enforceUpdateConfig(update *Update, toolConfig ToolConfig, slotSchedule *Schedule, fields []string) []string {
+	if len(fields) == 0 {
+		return nil
+	}
+
+	expected := createUpdateEntry(update.PackageEcosystem, update.Directory, toolConfig, slotSchedule)
+
+	var changed []string
+	for _, field := range fields {
+		switch field {
+		case EnforceSchedule:
+			if !sameYaml(update.Schedule, expected.Schedule) {
+				update.Schedule = expected.Schedule
+				changed = append(changed, field)
+			}
+		case EnforceCooldown:
+			if !sameYaml(update.Cooldown, expected.Cooldown) {
+				update.Cooldown = expected.Cooldown
+				changed = append(changed, field)
+			}
+		case EnforceOpenPullRequestsLimit:
+			if !sameYaml(update.OpenPullRequestsLimit, expected.OpenPullRequestsLimit) {
+				update.OpenPullRequestsLimit = expected.OpenPullRequestsLimit
+				changed = append(changed, field)
+			}
+		}
+	}
+
+	if len(changed) > 0 {
+		log.Printf("INFO  Enforced %v on %v %v.", strings.Join(changed, ", "), update.PackageEcosystem, update.Directory)
+	}
+
+	return changed
+}
+
+// sameYaml returns whether two values are written the same way to dependabot.yml. Comparing the values themselves would
+// tell an empty list from a missing one, although neither is written.
+func sameYaml(a any, b any) bool {
+	aYaml, aErr := yaml.Marshal(a)
+	bYaml, bErr := yaml.Marshal(b)
+
+	return aErr == nil && bErr == nil && bytes.Equal(aYaml, bYaml)
 }

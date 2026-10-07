@@ -487,7 +487,7 @@ func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, too
 		log.Printf("ERROR Could not parse current config for %v: %v", repo, err)
 		return nil, config.ChangeInfo{}
 	}
-	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, slotSchedule, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
+	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, slotSchedule, nil, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
 	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 || len(changeInfo.FixedUpdates) > 0 || len(changeInfo.RemovedUpdates) > 0 || len(changeInfo.RemovedRegistries) > 0 {
 		// at least one item in the update block is needed
 		return dependabotConfig.ToYaml(), changeInfo
