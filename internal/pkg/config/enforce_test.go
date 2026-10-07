@@ -200,7 +200,7 @@ func updateConfigWith(t *testing.T, dependabotYaml string, toolConfig ToolConfig
 
 	slotSchedule := &Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
 	directoryExists := func(string, CheckDirectoryExistsParameters) bool { return true }
-	changeInfo := dependabotConfig.UpdateConfig(map[string]string{}, toolConfig, slotSchedule, enforcedFields,
+	changeInfo := dependabotConfig.UpdateConfig(map[string]string{}, toolConfig, RepoSettings{SlotSchedule: slotSchedule, EnforcedFields: enforcedFields},
 		LoadFileContentDummy, LoadFileContentParameters{}, directoryExists, CheckDirectoryExistsParameters{})
 
 	return dependabotConfig, changeInfo

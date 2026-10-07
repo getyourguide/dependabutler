@@ -213,6 +213,12 @@ type Cooldown struct {
 	Unknown         map[string]any `yaml:",inline"`
 }
 
+// RepoSettings holds the settings that depend on the repository being processed.
+type RepoSettings struct {
+	SlotSchedule   *Schedule
+	EnforcedFields []string
+}
+
 // ChangeInfo holds the changes applied to a config.
 type ChangeInfo struct {
 	NewRegistries     []RegistryInfo
@@ -502,7 +508,7 @@ func GetManifestPath(manifestFile string, manifestType string) string {
 
 // ProcessManifest adds config for a new manifest file to dependabot.yml if necessary
 func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestType string, toolConfig ToolConfig,
-	slotSchedule *Schedule, changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
+	repoSettings RepoSettings, changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
 ) {
 	if manifestFile == "" || manifestType == "" {
 		return
@@ -543,7 +549,7 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 	// check if the manifest itself is covered, and add it if necessary
 	if !config.IsManifestCovered(manifestFile, manifestType, updateRegistries) {
 		// create the new update section using the default properties
-		update := createUpdateEntry(manifestType, manifestPath, toolConfig, slotSchedule)
+		update := createUpdateEntry(manifestType, manifestPath, toolConfig, repoSettings.SlotSchedule)
 		// add new registries if required
 		if len(updateRegistries) > 0 {
 			update.Registries = updateRegistries
@@ -678,8 +684,8 @@ func (config *DependabotConfig) ToYaml() []byte {
 }
 
 // UpdateConfig updates a dependabot config with a list of manifests found and the tool's config.
-func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig, slotSchedule *Schedule,
-	enforcedFields []string, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters, checkDirectoryExists CheckDirectoryExists,
+func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig, repoSettings RepoSettings,
+	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters, checkDirectoryExists CheckDirectoryExists,
 	checkDirectoryExistsParams CheckDirectoryExistsParameters,
 ) ChangeInfo {
 	changeInfo := ChangeInfo{
@@ -715,11 +721,11 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	config.Updates = existingUpdates
 
 	// Fix existing updates, if necessary
-	config.fixExistingUpdates(toolConfig, slotSchedule, enforcedFields, &changeInfo)
+	config.fixExistingUpdates(toolConfig, repoSettings, &changeInfo)
 
 	// Iterate manifest files and check if they are covered by the current config file
 	for _, manifest := range manifestsSorted {
-		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, slotSchedule, &changeInfo, loadFileFn, loadFileParams)
+		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, repoSettings, &changeInfo, loadFileFn, loadFileParams)
 	}
 
 	// Handle stable group prefixes if enabled
@@ -750,15 +756,15 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 }
 
 // fixExistingUpdates fixes existing updates and sets their enforced fields, and records the changes.
-func (config *DependabotConfig) fixExistingUpdates(toolConfig ToolConfig, slotSchedule *Schedule, enforcedFields []string, changeInfo *ChangeInfo) {
-	cooldownEnforced := util.Contains(enforcedFields, EnforceCooldown)
+func (config *DependabotConfig) fixExistingUpdates(toolConfig ToolConfig, repoSettings RepoSettings, changeInfo *ChangeInfo) {
+	cooldownEnforced := util.Contains(repoSettings.EnforcedFields, EnforceCooldown)
 	for i := range config.Updates {
 		update := &config.Updates[i]
 		if fixExistingUpdateConfig(update) || (!cooldownEnforced && addCooldownToExistingUpdate(update, toolConfig)) {
 			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
 		}
 
-		if fields := enforceUpdateConfig(update, toolConfig, slotSchedule, enforcedFields); len(fields) > 0 {
+		if fields := enforceUpdateConfig(update, toolConfig, repoSettings.SlotSchedule, repoSettings.EnforcedFields); len(fields) > 0 {
 			changeInfo.EnforcedUpdates = append(changeInfo.EnforcedUpdates, EnforcedUpdateInfo{Type: update.PackageEcosystem, Directory: updateDirectories(update), Fields: fields})
 		}
 	}
