@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/getyourguide/dependabutler/internal/pkg/util"
 )
 
 const enforceConfig = `
@@ -170,5 +172,169 @@ func TestLoadFilesFailsOnMissingFiles(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "missing") {
 			t.Errorf("LoadFiles(%+v) error = %v, expected it to name the missing file", enforce, err)
 		}
+	}
+}
+
+var allEnforcedFields = []string{"schedule", "cooldown", "open-pull-requests-limit"}
+
+func enforceToolConfig() ToolConfig {
+	return ToolConfig{
+		UpdateDefaults: UpdateDefaults{
+			Schedule:              Schedule{Interval: "weekly", Day: "sunday"},
+			OpenPullRequestsLimit: util.Ptr(5),
+			Cooldown:              Cooldown{DefaultDays: 3, SemverMajorDays: 21},
+		},
+		UpdateOverrides: map[string]UpdateDefaults{
+			"npm": {Cooldown: Cooldown{DefaultDays: 3, SemverMajorDays: 21, Exclude: []string{"@getyourguide*"}}},
+		},
+	}
+}
+
+func updateConfigWith(t *testing.T, dependabotYaml string, toolConfig ToolConfig, enforcedFields []string) (*DependabotConfig, ChangeInfo) {
+	t.Helper()
+
+	dependabotConfig, err := ParseDependabotConfig([]byte(dependabotYaml))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	slotSchedule := &Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
+	directoryExists := func(string, CheckDirectoryExistsParameters) bool { return true }
+	changeInfo := dependabotConfig.UpdateConfig(map[string]string{}, toolConfig, slotSchedule, enforcedFields,
+		LoadFileContentDummy, LoadFileContentParameters{}, directoryExists, CheckDirectoryExistsParameters{})
+
+	return dependabotConfig, changeInfo
+}
+
+const customNpmEntry = `
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: daily
+      time: "05:00"
+    open-pull-requests-limit: 0
+    cooldown:
+      default-days: 7
+      exclude: ["*getyourguide*"]
+    commit-message:
+      prefix: "[deps]"
+    labels: [dependencies]
+    assignees: [someone]
+    allow:
+      - dependency-type: direct
+    ignore:
+      - dependency-name: left-pad
+`
+
+func TestUpdateConfigEnforcesFieldsOnExistingEntries(t *testing.T) {
+	dependabotConfig, changeInfo := updateConfigWith(t, customNpmEntry, enforceToolConfig(), allEnforcedFields)
+	update := dependabotConfig.Updates[0]
+
+	expectedSchedule := Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
+	expectedCooldown := Cooldown{DefaultDays: 3, SemverMajorDays: 21, Exclude: []string{"@getyourguide*"}}
+
+	if !reflect.DeepEqual(update.Schedule, expectedSchedule) {
+		t.Errorf("schedule = %+v, expected %+v", update.Schedule, expectedSchedule)
+	}
+	if !reflect.DeepEqual(update.Cooldown, expectedCooldown) {
+		t.Errorf("cooldown = %+v, expected %+v", update.Cooldown, expectedCooldown)
+	}
+	if update.OpenPullRequestsLimit == nil || *update.OpenPullRequestsLimit != 5 {
+		t.Errorf("open-pull-requests-limit = %v, expected 5", update.OpenPullRequestsLimit)
+	}
+
+	expectedEnforced := []EnforcedUpdateInfo{{Type: "npm", Directory: "/", Fields: allEnforcedFields}}
+	if !reflect.DeepEqual(changeInfo.EnforcedUpdates, expectedEnforced) {
+		t.Errorf("EnforcedUpdates = %+v, expected %+v", changeInfo.EnforcedUpdates, expectedEnforced)
+	}
+}
+
+func TestUpdateConfigEnforcementKeepsOtherKeys(t *testing.T) {
+	expected, _ := updateConfigWith(t, customNpmEntry, enforceToolConfig(), nil)
+	enforced, _ := updateConfigWith(t, customNpmEntry, enforceToolConfig(), allEnforcedFields)
+
+	kept := enforced.Updates[0]
+	kept.Schedule = expected.Updates[0].Schedule
+	kept.Cooldown = expected.Updates[0].Cooldown
+	kept.OpenPullRequestsLimit = expected.Updates[0].OpenPullRequestsLimit
+
+	if !reflect.DeepEqual(kept, expected.Updates[0]) {
+		t.Errorf("enforcement changed other keys\nExpected: %+v\nGot:      %+v", expected.Updates[0], kept)
+	}
+}
+
+func TestUpdateConfigEnforcesOnlyTheListedFields(t *testing.T) {
+	dependabotConfig, changeInfo := updateConfigWith(t, customNpmEntry, enforceToolConfig(), []string{"cooldown"})
+	update := dependabotConfig.Updates[0]
+
+	if update.Schedule.Interval != "daily" || *update.OpenPullRequestsLimit != 0 {
+		t.Errorf("fields outside the list changed: schedule %+v, limit %v", update.Schedule, *update.OpenPullRequestsLimit)
+	}
+	if len(changeInfo.EnforcedUpdates) != 1 || !reflect.DeepEqual(changeInfo.EnforcedUpdates[0].Fields, []string{"cooldown"}) {
+		t.Errorf("EnforcedUpdates = %+v, expected only cooldown", changeInfo.EnforcedUpdates)
+	}
+}
+
+func TestUpdateConfigEnforcesNothingOnMatchingEntries(t *testing.T) {
+	_, changeInfo := updateConfigWith(t, `
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: cron
+      cronjob: "0 3 * * 1,4"
+      timezone: UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      semver-major-days: 21
+      default-days: 3
+`, enforceToolConfig(), allEnforcedFields)
+
+	if len(changeInfo.EnforcedUpdates) != 0 || len(changeInfo.FixedUpdates) != 0 {
+		t.Errorf("changes on a matching entry: enforced %+v, fixed %+v", changeInfo.EnforcedUpdates, changeInfo.FixedUpdates)
+	}
+}
+
+func TestUpdateConfigEnforcementIsStableOnceWritten(t *testing.T) {
+	toolConfig := enforceToolConfig()
+	toolConfig.UpdateOverrides = nil
+	toolConfig.UpdateDefaults.Cooldown.Include = []string{}
+	toolConfig.UpdateDefaults.Cooldown.Exclude = []string{}
+
+	enforced, _ := updateConfigWith(t, customNpmEntry, toolConfig, allEnforcedFields)
+	_, changeInfo := updateConfigWith(t, string(enforced.ToYaml()), toolConfig, allEnforcedFields)
+
+	if len(changeInfo.EnforcedUpdates) != 0 {
+		t.Errorf("EnforcedUpdates = %+v on a file that was already enforced", changeInfo.EnforcedUpdates)
+	}
+}
+
+func TestUpdateConfigListsTheDirectoriesOfEnforcedEntries(t *testing.T) {
+	_, changeInfo := updateConfigWith(t, `
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories: [/a, /b]
+    schedule:
+      interval: daily
+`, enforceToolConfig(), []string{"schedule"})
+
+	if len(changeInfo.EnforcedUpdates) != 1 || changeInfo.EnforcedUpdates[0].Directory != "/a, /b" {
+		t.Errorf("EnforcedUpdates = %+v, expected the directories /a, /b", changeInfo.EnforcedUpdates)
+	}
+}
+
+func TestUpdateConfigEnforcedCooldownIsNotFilledIn(t *testing.T) {
+	toolConfig := enforceToolConfig()
+	toolConfig.UpdateMissingCooldownSettings = util.Ptr(true)
+
+	_, changeInfo := updateConfigWith(t, customNpmEntry, toolConfig, []string{"cooldown"})
+
+	if len(changeInfo.FixedUpdates) != 0 {
+		t.Errorf("FixedUpdates = %+v, expected the enforced cooldown to replace filling in missing fields", changeInfo.FixedUpdates)
 	}
 }

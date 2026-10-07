@@ -215,12 +215,20 @@ type ChangeInfo struct {
 	NewUpdates        []UpdateInfo
 	FixedUpdates      []UpdateInfo
 	RemovedUpdates    []UpdateInfo
+	EnforcedUpdates   []EnforcedUpdateInfo
 }
 
 // RegistryInfo holds the properties of a registry, for the change message.
 type RegistryInfo struct {
 	Type string
 	Name string
+}
+
+// EnforcedUpdateInfo holds the fields of an existing update that were set to the configured values, for the change message.
+type EnforcedUpdateInfo struct {
+	Type      string
+	Directory string
+	Fields    []string
 }
 
 // UpdateInfo holds the properties of an update, for the change message.
@@ -650,7 +658,7 @@ func (config *DependabotConfig) ToYaml() []byte {
 
 // UpdateConfig updates a dependabot config with a list of manifests found and the tool's config.
 func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig, slotSchedule *Schedule,
-	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters, checkDirectoryExists CheckDirectoryExists,
+	enforcedFields []string, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters, checkDirectoryExists CheckDirectoryExists,
 	checkDirectoryExistsParams CheckDirectoryExistsParameters,
 ) ChangeInfo {
 	changeInfo := ChangeInfo{
@@ -659,6 +667,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		NewUpdates:        []UpdateInfo{},
 		FixedUpdates:      []UpdateInfo{},
 		RemovedUpdates:    []UpdateInfo{},
+		EnforcedUpdates:   []EnforcedUpdateInfo{},
 	}
 
 	// Base directories must be processed before subdirectories (/ before /app).
@@ -685,12 +694,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	config.Updates = existingUpdates
 
 	// Fix existing updates, if necessary
-	for i := range config.Updates {
-		update := &config.Updates[i]
-		if fixExistingUpdateConfig(update) || addCooldownToExistingUpdate(update, toolConfig) {
-			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
-		}
-	}
+	config.fixExistingUpdates(toolConfig, slotSchedule, enforcedFields, &changeInfo)
 
 	// Iterate manifest files and check if they are covered by the current config file
 	for _, manifest := range manifestsSorted {
@@ -722,6 +726,30 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 	}
 
 	return changeInfo
+}
+
+// fixExistingUpdates fixes existing updates and sets their enforced fields, and records the changes.
+func (config *DependabotConfig) fixExistingUpdates(toolConfig ToolConfig, slotSchedule *Schedule, enforcedFields []string, changeInfo *ChangeInfo) {
+	cooldownEnforced := util.Contains(enforcedFields, EnforceCooldown)
+	for i := range config.Updates {
+		update := &config.Updates[i]
+		if fixExistingUpdateConfig(update) || (!cooldownEnforced && addCooldownToExistingUpdate(update, toolConfig)) {
+			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
+		}
+
+		if fields := enforceUpdateConfig(update, toolConfig, slotSchedule, enforcedFields); len(fields) > 0 {
+			changeInfo.EnforcedUpdates = append(changeInfo.EnforcedUpdates, EnforcedUpdateInfo{Type: update.PackageEcosystem, Directory: updateDirectories(update), Fields: fields})
+		}
+	}
+}
+
+// updateDirectories returns the directory of an update, or its directories separated by commas.
+func updateDirectories(update *Update) string {
+	if update.Directory != "" {
+		return update.Directory
+	}
+
+	return strings.Join(update.Directories, ", ")
 }
 
 // applyOverrides updates a config for an Update, using overridden values

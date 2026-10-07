@@ -1252,7 +1252,7 @@ updates:
 	slotSchedule := &Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
 	directoryExists := func(string, CheckDirectoryExistsParameters) bool { return true }
 
-	dependabotConfig.UpdateConfig(map[string]string{"package.json": "npm", "go.mod": "gomod"}, ToolConfig{}, slotSchedule,
+	dependabotConfig.UpdateConfig(map[string]string{"package.json": "npm", "go.mod": "gomod"}, ToolConfig{}, slotSchedule, nil,
 		LoadFileContentDummy, LoadFileContentParameters{}, directoryExists, CheckDirectoryExistsParameters{})
 
 	for _, update := range dependabotConfig.Updates {
