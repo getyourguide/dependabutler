@@ -156,9 +156,6 @@ Initial version.
   entries" in the README.
 - Added `enforce-pr-title`, `enforce-commit-message` and `enforce-pr-note` to `pull-request-parameters`, used when
   enforced settings are the only change.
-
-## v0.13.0
-
 - Added `groups` to `update-defaults` and `update-overrides`: new update entries get the configured groups, and
   `enforce` can set them on existing entries. The configuration file is rejected when a group uses `dependency-type` on
   an ecosystem that does not support it, or when a group matching every dependency comes before another group.
