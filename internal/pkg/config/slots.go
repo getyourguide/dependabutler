@@ -223,9 +223,14 @@ func (slots *ScheduleSlots) LoadReposFiles(configDir string) error {
 	return nil
 }
 
-// NeedsRulesets returns whether any window selects repositories by ruleset.
-func (slots *ScheduleSlots) NeedsRulesets() bool {
+// NeedsRulesets returns whether the rulesets of a repository can change its window: not when the repos-file of a
+// window before the first ruleset window, or of that window itself, lists it. Reading them costs an API call, and a
+// failed call skips the repository.
+func (slots *ScheduleSlots) NeedsRulesets(repo string) bool {
 	for _, window := range slots.Windows {
+		if window.repos[strings.ToLower(repo)] {
+			return false
+		}
 		if len(window.Rulesets) > 0 {
 			return true
 		}

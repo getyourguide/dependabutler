@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/config"
@@ -108,6 +109,28 @@ func TestSlotScheduleWithoutSlotsReadsNoRulesets(t *testing.T) {
 
 	if schedule != nil || err != nil {
 		t.Errorf("slotSchedule() = %v, %v, expected nil, nil", schedule, err)
+	}
+}
+
+func TestSlotScheduleSkipsRulesetsOfAReposFileRepo(t *testing.T) {
+	slots := &config.ScheduleSlots{Windows: []config.SlotWindow{
+		{Name: "office", Hours: []int{10}, Timezone: "UTC", Rulesets: []string{"audited"}, ReposFile: "office.txt"},
+		{Name: "early", Hours: []int{2}, Timezone: "UTC"},
+	}}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "office.txt"), []byte("opted-in\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := slots.LoadReposFiles(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	schedule, err := slotSchedule(slots, "opted-in", func() ([]string, error) {
+		return nil, errors.New("rulesets read although the repos-file selects the repo")
+	})
+
+	if err != nil || schedule == nil || !strings.HasPrefix(schedule.Cronjob, "0 10 ") {
+		t.Errorf("slotSchedule() = %v, %v, expected a schedule in the office window", schedule, err)
 	}
 }
 

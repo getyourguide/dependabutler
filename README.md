@@ -59,9 +59,10 @@ schedule-slots:
   applies to it. Rulesets of the repository itself count too, so a repository admin can put their repository in a
   window by creating an active ruleset with that name. Use `repos-file` for a list kept by hand.
 - `repos-file` is relative to the configuration file and lists one repository name per line. Blank lines are skipped.
-- Rulesets are read with one API call per repository, only when a window uses `rulesets`. If they cannot be read, the
-  repository is skipped and counted as failed, rather than placed in the wrong window. In local mode rulesets are not
-  read, and the repository name is `repo`, or the name of `dir` if `repo` is not set.
+- Rulesets are read with one API call per repository, only when they can change its window: not for a repository that a
+  `repos-file` already places before them. If they cannot be read, the repository is skipped and counted as failed,
+  rather than placed in the wrong window. In local mode rulesets are not read, and the repository name is `repo`, or the
+  name of `dir` if `repo` is not set.
 - Each repository gets a fixed slot, a day and an hour of its window, based on its name and `salt`. Adding or removing
   repositories does not move the others; changing the salt reshuffles all of them. Names match regardless of case, in
   `repos-file` too. The spread is not perfectly even: to reduce the busiest slot, try a few salts against the real

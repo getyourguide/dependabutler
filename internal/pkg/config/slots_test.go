@@ -303,13 +303,28 @@ func TestWindowForPicksTheFirstMatchingWindow(t *testing.T) {
 }
 
 func TestNeedsRulesets(t *testing.T) {
-	withRulesets := ScheduleSlots{Windows: []SlotWindow{{Name: "office", Rulesets: []string{"audited"}}, {Name: "early"}}}
+	slots := ScheduleSlots{Windows: []SlotWindow{
+		{Name: "opt-in", repos: map[string]bool{"listed-first": true}},
+		{Name: "office", Rulesets: []string{"audited"}, repos: map[string]bool{"listed-with-rulesets": true}},
+		{Name: "late", repos: map[string]bool{"listed-later": true}},
+		{Name: "early"},
+	}}
 	withoutRulesets := ScheduleSlots{Windows: []SlotWindow{{Name: "office", ReposFile: "x.txt"}, {Name: "early"}}}
 
-	if !withRulesets.NeedsRulesets() {
-		t.Errorf("NeedsRulesets() = false for a window with rulesets")
+	for _, tt := range []struct {
+		repo     string
+		expected bool
+	}{
+		{"listed-first", false},
+		{"Listed-With-Rulesets", false},
+		{"listed-later", true},
+		{"unlisted", true},
+	} {
+		if got := slots.NeedsRulesets(tt.repo); got != tt.expected {
+			t.Errorf("NeedsRulesets(%q) = %v, expected %v", tt.repo, got, tt.expected)
+		}
 	}
-	if withoutRulesets.NeedsRulesets() {
+	if withoutRulesets.NeedsRulesets("unlisted") {
 		t.Errorf("NeedsRulesets() = true without any window with rulesets")
 	}
 }

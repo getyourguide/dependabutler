@@ -162,7 +162,7 @@ func slotSchedule(slots *config.ScheduleSlots, repo string, readRulesets func() 
 	}
 
 	var rulesets []string
-	if slots.NeedsRulesets() {
+	if slots.NeedsRulesets(repo) {
 		var err error
 		rulesets, err = readRulesets()
 		if err != nil {
