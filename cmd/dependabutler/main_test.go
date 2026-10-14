@@ -212,6 +212,46 @@ func TestDirectoryGrouping(t *testing.T) {
 	}
 }
 
+func TestCheckLocalDirectoryExists(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "app"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "file"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		directory string
+		exists    bool
+	}{
+		{"/app", true},
+		{"/missing", false},
+		{"/file", false},
+		{"/file/below-a-file", false},
+	} {
+		exists, err := CheckLocalDirectoryExists(tt.directory, config.CheckDirectoryExistsParameters{Directory: dir})
+
+		if err != nil || exists != tt.exists {
+			t.Errorf("CheckLocalDirectoryExists(%q) = %v, %v, expected %v, nil", tt.directory, exists, err, tt.exists)
+		}
+	}
+}
+
+func TestGetUpdatedConfigYamlFailsWhenADirectoryCannotBeChecked(t *testing.T) {
+	failing := func(string, config.CheckDirectoryExistsParameters) (bool, error) {
+		return false, errors.New("502 Bad Gateway")
+	}
+	current := []byte("version: 2\nupdates:\n  - package-ecosystem: docker\n    directory: /app\n    schedule:\n      interval: weekly\n")
+
+	yamlContent, _, err := GetUpdatedConfigYaml(current, nil, config.ToolConfig{}, config.RepoSettings{}, "repo",
+		LoadLocalFileContent, config.LoadFileContentParameters{}, failing, config.CheckDirectoryExistsParameters{})
+
+	if err == nil || yamlContent != nil {
+		t.Errorf("GetUpdatedConfigYaml() = %q, %v, expected no content and an error", yamlContent, err)
+	}
+}
+
 func TestLocalRepoName(t *testing.T) {
 	if got := localRepoName("given", "/some/dir"); got != "given" {
 		t.Errorf("localRepoName() = %q, expected the -repo value", got)

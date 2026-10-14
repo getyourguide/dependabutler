@@ -1250,7 +1250,7 @@ updates:
 	}
 
 	slotSchedule := &Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
-	directoryExists := func(string, CheckDirectoryExistsParameters) bool { return true }
+	directoryExists := func(string, CheckDirectoryExistsParameters) (bool, error) { return true, nil }
 
 	dependabotConfig.UpdateConfig(map[string]string{"package.json": "npm", "go.mod": "gomod"}, ToolConfig{}, RepoSettings{SlotSchedule: slotSchedule},
 		LoadFileContentDummy, LoadFileContentParameters{}, directoryExists, CheckDirectoryExistsParameters{})

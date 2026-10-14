@@ -131,12 +131,55 @@ func (config *DependabotConfig) overlapsOtherUpdate(i int) bool {
 	return false
 }
 
+// removeMissingDirectories removes the update entries and the directories of entries that no longer exist. A check
+// that fails is not a missing directory: removing it would drop the settings of its entry when it is added back.
+func (config *DependabotConfig) removeMissingDirectories(exists CheckDirectoryExists, params CheckDirectoryExistsParameters, changeInfo *ChangeInfo) error {
+	var kept []Update
+	for _, update := range config.Updates {
+		if len(update.Directories) > 0 {
+			directories, err := existingDirectories(update, exists, params, changeInfo)
+			if err != nil {
+				return err
+			}
+			if len(directories) > 0 {
+				update.Directories = directories
+				kept = append(kept, update)
+			}
+
+			continue
+		}
+
+		found, err := exists(update.Directory, params)
+		if err != nil {
+			return fmt.Errorf("could not check directory %v of %v: %w", update.Directory, update.PackageEcosystem, err)
+		}
+		if found {
+			kept = append(kept, update)
+		} else {
+			changeInfo.RemovedUpdates = append(changeInfo.RemovedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory})
+		}
+	}
+
+	config.Updates = kept
+
+	return nil
+}
+
 // existingDirectories returns the directories of an update that exist, and records the others as removed. Glob
 // patterns are kept.
-func existingDirectories(update Update, exists CheckDirectoryExists, params CheckDirectoryExistsParameters, changeInfo *ChangeInfo) []string {
+func existingDirectories(update Update, exists CheckDirectoryExists, params CheckDirectoryExistsParameters, changeInfo *ChangeInfo) ([]string, error) {
 	var kept []string
 	for _, directory := range update.Directories {
-		if isGlob(directory) || exists(directory, params) {
+		if isGlob(directory) {
+			kept = append(kept, directory)
+			continue
+		}
+
+		found, err := exists(directory, params)
+		if err != nil {
+			return nil, fmt.Errorf("could not check directory %v of %v: %w", directory, update.PackageEcosystem, err)
+		}
+		if found {
 			kept = append(kept, directory)
 			continue
 		}
@@ -144,7 +187,7 @@ func existingDirectories(update Update, exists CheckDirectoryExists, params Chec
 		changeInfo.RemovedUpdates = append(changeInfo.RemovedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: directory})
 	}
 
-	return kept
+	return kept, nil
 }
 
 // compatibleUpdate returns the index of the update that can take the directories of update, or -1: one of the same

@@ -2,12 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/config"
@@ -35,22 +38,21 @@ func LoadLocalFileContent(file string, params config.LoadFileContentParameters) 
 }
 
 // CheckRemoteDirectoryExists is the implementation of CheckFolderExists, for remote directories (GitHub).
-func CheckRemoteDirectoryExists(directory string, params config.CheckDirectoryExistsParameters) bool {
-	exists, err := params.Client.CheckDirectoryExists(params.Org, params.Repo, directory, "")
-	if err != nil {
-		return false
-	}
-	return exists
+func CheckRemoteDirectoryExists(directory string, params config.CheckDirectoryExistsParameters) (bool, error) {
+	return params.Client.CheckDirectoryExists(params.Org, params.Repo, directory, "")
 }
 
 // CheckLocalDirectoryExists is the implementation of CheckFolderExists, for local directories (file system).
-func CheckLocalDirectoryExists(directory string, params config.CheckDirectoryExistsParameters) bool {
+func CheckLocalDirectoryExists(directory string, params config.CheckDirectoryExistsParameters) (bool, error) {
 	fullPath := filepath.Join(params.Directory, directory)
 	info, err := os.Stat(fullPath)
-	if err != nil {
-		return false
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		return false, nil
 	}
-	return info.IsDir()
+	if err != nil {
+		return false, err
+	}
+	return info.IsDir(), nil
 }
 
 func showUsageAndExit() {
@@ -367,7 +369,12 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 	}
 
 	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: toolConfig.Enforce.FieldsFor(repo), DirectoryGrouping: grouping}
-	yamlContent, changeInfo := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, repoSettings, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
+	yamlContent, changeInfo, err := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, repoSettings, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
+	if err != nil {
+		log.Printf("ERROR Skipping repo %v: %v", repo, err)
+		return false
+	}
+
 	if yamlContent != nil {
 		prDesc := githubapi.CreatePRDescription(changeInfo, toolConfig.PullRequestParameters.EnforcePRNote)
 		if execute {
@@ -457,7 +464,12 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string, re
 	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{Directory: dir}
 	grouping := toolConfig.DirectoryGrouping.ModeFor("")
 	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: toolConfig.Enforce.FieldsFor(repo), DirectoryGrouping: grouping}
-	yamlContent, _ := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, repoSettings, dir, LoadLocalFileContent, loadFileParameters, CheckLocalDirectoryExists, checkDirectoryExistsParameters)
+	yamlContent, _, err := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, repoSettings, dir, LoadLocalFileContent, loadFileParameters, CheckLocalDirectoryExists, checkDirectoryExistsParameters)
+	if err != nil {
+		log.Printf("ERROR Skipping %v: %v", dir, err)
+		return false
+	}
+
 	if yamlContent != nil {
 		if execute {
 			if err := util.MakeDirIfNotExists(dirPath); err != nil {
@@ -549,17 +561,20 @@ func main() {
 // GetUpdatedConfigYaml returns the new .dependabot.yml file content, based on the current content and the manifests found.
 func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, repoSettings config.RepoSettings, repo string,
 	loadFileFn config.LoadFileContent, loadFileParams config.LoadFileContentParameters, checkDirectoryExistsFn config.CheckDirectoryExists, checkDirectoryExistsParams config.CheckDirectoryExistsParameters,
-) ([]byte, config.ChangeInfo) {
+) ([]byte, config.ChangeInfo, error) {
 	dependabotConfig, err := config.ParseDependabotConfig(currentConfig)
 	if err != nil {
 		log.Printf("ERROR Could not parse current config for %v: %v", repo, err)
-		return nil, config.ChangeInfo{}
+		return nil, config.ChangeInfo{}, nil
 	}
-	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, repoSettings, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
+	changeInfo, err := dependabotConfig.UpdateConfig(manifests, toolConfig, repoSettings, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
+	if err != nil {
+		return nil, config.ChangeInfo{}, err
+	}
 	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 || len(changeInfo.FixedUpdates) > 0 || len(changeInfo.RemovedUpdates) > 0 || len(changeInfo.RemovedRegistries) > 0 || len(changeInfo.EnforcedUpdates) > 0 {
 		// at least one item in the update block is needed
-		return dependabotConfig.ToYaml(), changeInfo
+		return dependabotConfig.ToYaml(), changeInfo, nil
 	}
 	log.Printf("INFO  No update needed for repo %s.", repo)
-	return nil, config.ChangeInfo{}
+	return nil, config.ChangeInfo{}, nil
 }

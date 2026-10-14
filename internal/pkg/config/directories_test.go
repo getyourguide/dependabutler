@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -92,8 +93,8 @@ func groupDirectoriesWith(t *testing.T, dependabotYaml string, mode string, enfo
 
 	toolConfig := ToolConfig{UpdateDefaults: UpdateDefaults{Schedule: Schedule{Interval: "weekly"}}}
 	repoSettings := RepoSettings{EnforcedFields: enforced, DirectoryGrouping: mode}
-	directoryExists := func(string, CheckDirectoryExistsParameters) bool { return true }
-	changeInfo := dependabotConfig.UpdateConfig(manifests, toolConfig, repoSettings,
+	directoryExists := func(string, CheckDirectoryExistsParameters) (bool, error) { return true, nil }
+	changeInfo, _ := dependabotConfig.UpdateConfig(manifests, toolConfig, repoSettings,
 		LoadFileContentDummy, LoadFileContentParameters{}, directoryExists, CheckDirectoryExistsParameters{})
 
 	return dependabotConfig, changeInfo
@@ -252,11 +253,11 @@ updates:
 	if err != nil {
 		t.Fatal(err)
 	}
-	exists := func(directory string, _ CheckDirectoryExistsParameters) bool {
-		return !strings.Contains(directory, "gone")
+	exists := func(directory string, _ CheckDirectoryExistsParameters) (bool, error) {
+		return !strings.Contains(directory, "gone"), nil
 	}
 
-	changeInfo := dependabotConfig.UpdateConfig(nil, ToolConfig{}, RepoSettings{},
+	changeInfo, _ := dependabotConfig.UpdateConfig(nil, ToolConfig{}, RepoSettings{},
 		LoadFileContentDummy, LoadFileContentParameters{}, exists, CheckDirectoryExistsParameters{})
 
 	if got := updateLocations(dependabotConfig.Updates); !reflect.DeepEqual(got, []string{"docker /a, /lib-*"}) {
@@ -264,6 +265,42 @@ updates:
 	}
 	if len(changeInfo.RemovedUpdates) != 3 {
 		t.Errorf("RemovedUpdates = %+v, expected the three missing directories", changeInfo.RemovedUpdates)
+	}
+}
+
+func TestUpdateConfigRemovesNothingWhenADirectoryCannotBeChecked(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		entry string
+	}{
+		{"directories", "directories: [/a, /flaky]"},
+		{"directory", "directory: /flaky"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dependabotConfig, err := ParseDependabotConfig([]byte("version: 2\nupdates:\n  - package-ecosystem: docker\n    " +
+				tt.entry + "\n    schedule:\n      interval: weekly\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			exists := func(directory string, _ CheckDirectoryExistsParameters) (bool, error) {
+				if directory == "/flaky" {
+					return false, errors.New("502 Bad Gateway")
+				}
+
+				return true, nil
+			}
+			before := updateLocations(dependabotConfig.Updates)
+
+			_, err = dependabotConfig.UpdateConfig(nil, ToolConfig{}, RepoSettings{},
+				LoadFileContentDummy, LoadFileContentParameters{}, exists, CheckDirectoryExistsParameters{})
+
+			if err == nil || !strings.Contains(err.Error(), "/flaky") || !strings.Contains(err.Error(), "502 Bad Gateway") {
+				t.Errorf("UpdateConfig() error = %v, expected it to name /flaky and the cause", err)
+			}
+			if got := updateLocations(dependabotConfig.Updates); !reflect.DeepEqual(got, before) {
+				t.Errorf("updates = %v, expected them unchanged: %v", got, before)
+			}
+		})
 	}
 }
 
@@ -327,7 +364,7 @@ updates:
 		Schedule: Schedule{Interval: "weekly"},
 		Groups:   Groups{{Name: "minor-patch", Group: Group{Patterns: []string{"*"}}}},
 	}}
-	exists := func(string, CheckDirectoryExistsParameters) bool { return true }
+	exists := func(string, CheckDirectoryExistsParameters) (bool, error) { return true, nil }
 
 	dependabotConfig.UpdateConfig(map[string]string{"b/Dockerfile": "docker"}, toolConfig, RepoSettings{DirectoryGrouping: "global"},
 		LoadFileContentDummy, LoadFileContentParameters{}, exists, CheckDirectoryExistsParameters{})

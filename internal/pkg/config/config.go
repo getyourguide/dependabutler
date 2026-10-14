@@ -285,8 +285,8 @@ type KeyValue struct {
 // LoadFileContent is a function type for loading the content of a file.
 type LoadFileContent func(file string, params LoadFileContentParameters) string
 
-// CheckDirectoryExists is a function type for checking if a folder exists.
-type CheckDirectoryExists func(directory string, params CheckDirectoryExistsParameters) bool
+// CheckDirectoryExists is a function type for checking if a folder exists. It returns an error when it cannot tell.
+type CheckDirectoryExists func(directory string, params CheckDirectoryExistsParameters) (bool, error)
 
 // Parse parses the config.yml format
 func (config *ToolConfig) Parse(data []byte) error {
@@ -717,7 +717,7 @@ func (config *DependabotConfig) ToYaml() []byte {
 func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig, repoSettings RepoSettings,
 	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters, checkDirectoryExists CheckDirectoryExists,
 	checkDirectoryExistsParams CheckDirectoryExistsParameters,
-) ChangeInfo {
+) (ChangeInfo, error) {
 	changeInfo := ChangeInfo{
 		NewRegistries:     []RegistryInfo{},
 		RemovedRegistries: []RegistryInfo{},
@@ -739,25 +739,9 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		return len(path1) < len(path2) || len(path1) == len(path2) && path1 < path2
 	})
 
-	// Remove updates with non-existing directories
-	var existingUpdates []Update
-	for _, update := range config.Updates {
-		if len(update.Directories) > 0 {
-			if kept := existingDirectories(update, checkDirectoryExists, checkDirectoryExistsParams, &changeInfo); len(kept) > 0 {
-				update.Directories = kept
-				existingUpdates = append(existingUpdates, update)
-			}
-
-			continue
-		}
-
-		if checkDirectoryExists(update.Directory, checkDirectoryExistsParams) {
-			existingUpdates = append(existingUpdates, update)
-		} else {
-			changeInfo.RemovedUpdates = append(changeInfo.RemovedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
-		}
+	if err := config.removeMissingDirectories(checkDirectoryExists, checkDirectoryExistsParams, &changeInfo); err != nil {
+		return ChangeInfo{}, err
 	}
-	config.Updates = existingUpdates
 
 	// Fix existing updates, if necessary
 	config.fixExistingUpdates(toolConfig, repoSettings, &changeInfo)
@@ -795,7 +779,7 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		}
 	}
 
-	return changeInfo
+	return changeInfo, nil
 }
 
 // fixExistingUpdates fixes existing updates and sets their enforced fields, and records the changes.

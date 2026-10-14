@@ -20,8 +20,9 @@ The default configuration file name is `dependabutler.yml`. Use `dependabutler-s
 When dependabutler changes a `dependabot.yml`, it writes the whole file again. Every key is kept, including keys
 dependabutler does not know, which are written after the known ones of the same section. Update entries are sorted by
 ecosystem and directory. A directory listed in `directories` that no longer exists is removed, like an entry whose
-`directory` no longer exists. Groups keep the order they are written in, since Dependabot puts a dependency in the first
-group it matches. Comments are not kept.
+`directory` no longer exists. If a directory cannot be checked, for example because of a GitHub server error, nothing
+is removed: the repository is skipped and counted as failed. Groups keep the order they are written in, since
+Dependabot puts a dependency in the first group it matches. Comments are not kept.
 
 ### Groups
 `update-defaults` and `update-overrides` can set `groups` for new update entries. The groups of an override replace the

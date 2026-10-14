@@ -173,3 +173,6 @@ Initial version.
   repository can choose the mode. With `directory-grouping` in `enforce`, existing entries are merged or split to match.
 - Directories listed in `directories` that no longer exist are removed. Before, only entries with a missing `directory`
   were removed.
+- A directory that cannot be checked, for example because of a GitHub server error, is no longer treated as missing:
+  the repository is skipped and counted as failed. Before, the entry was removed and added back on the next run without
+  its settings.
