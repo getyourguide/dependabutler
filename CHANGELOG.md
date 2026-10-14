@@ -142,3 +142,34 @@ Initial version.
   written after the known ones of the same section.
 - Fixed `replaces-base` being rewritten as the string `"true"` instead of the boolean `true`. Files that contain the
   string form are read, and written back as a boolean the next time dependabutler rewrites them.
+
+## v0.11.0
+
+- Added `schedule-slots`: new update entries get a `cron` schedule derived from the repository name, in one of several
+  windows of hours. A window selects repositories by ruleset or by a file listing them, and sets the days and the runs
+  per week (twice a week, Monday to Friday, by default). Unknown keys in the block are rejected. Off unless the
+  configuration file has the block. See "Schedule slots" in the README.
+- `-repo` sets the repository name used for schedule slots in local mode.
+- Added `enforce`: sets `schedule`, `cooldown` and `open-pull-requests-limit` of existing update entries to the
+  configured values. Repositories can keep their own values through an exceptions file, and enforcement can be limited
+  to a list of repositories. Off unless the configuration file has the block. See "Enforcing settings on existing
+  entries" in the README.
+- Added `enforce-pr-title`, `enforce-commit-message` and `enforce-pr-note` to `pull-request-parameters`, used when
+  enforced settings are the only change.
+- Added `groups` to `update-defaults` and `update-overrides`: new update entries get the configured groups, and
+  `enforce` can set them on existing entries. The configuration file is rejected when a group uses `dependency-type` on
+  an ecosystem that does not support it, or when a group matching every dependency comes before another group.
+- Groups keep the order they are written in when `dependabot.yml` is rewritten. Before, they were sorted by name, which
+  could change the group a dependency is put in.
+- `stable-group-prefixes` numbers groups in the order they are written instead of by name, so the prefixes keep the
+  order Dependabot matches groups in. Groups that already have unique prefixes are not renamed.
+- Unknown keys in the groups of the configuration file are dropped with a warning. `group-by` is known.
+- A merge key (`<<`) in `groups` of a `dependabot.yml` is rejected instead of being read as a group named `<<`.
+- Added `directory-grouping`: in a repository with several directories for an ecosystem, new manifests are added to
+  one entry for all directories (`global`) or get one entry per directory (`per-app`). A custom property of the
+  repository can choose the mode. With `directory-grouping` in `enforce`, existing entries are merged or split to match.
+- Directories listed in `directories` that no longer exist are removed. Before, only entries with a missing `directory`
+  were removed.
+- A directory that cannot be checked, for example because of a GitHub server error, is no longer treated as missing:
+  the repository is skipped and counted as failed. Before, the entry was removed and added back on the next run without
+  its settings.

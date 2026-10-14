@@ -1,11 +1,265 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/getyourguide/dependabutler/internal/pkg/config"
 )
+
+const scheduleSlotsConfig = `
+schedule-slots:
+  salt: test
+  windows:
+    - name: office-hours
+      hours: [10, 11, 13, 14, 15]
+      timezone: Europe/Berlin
+      rulesets: [audited]
+      repos-file: office-hours.txt
+    - name: early
+      hours: [2, 3, 4, 5, 6, 7, 8]
+      timezone: UTC
+`
+
+func loadTestScheduleSlots(t *testing.T) *config.ScheduleSlots {
+	t.Helper()
+
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "dependabutler.yml")
+	if err := os.WriteFile(configFile, []byte(scheduleSlotsConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "office-hours.txt"), []byte("opted-in\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	toolConfig, err := config.ParseToolConfig([]byte(scheduleSlotsConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loadScheduleSlots(toolConfig, configFile); err != nil {
+		t.Fatalf("loadScheduleSlots() failed: %v", err)
+	}
+
+	return toolConfig.ScheduleSlots
+}
+
+func TestLoadScheduleSlotsReadsReposFilesNextToTheConfig(t *testing.T) {
+	slots := loadTestScheduleSlots(t)
+
+	if got := slots.WindowFor("opted-in", nil).Name; got != "office-hours" {
+		t.Errorf("WindowFor(opted-in) = %q, expected office-hours", got)
+	}
+}
+
+func TestLoadScheduleSlotsWithoutSlots(t *testing.T) {
+	if err := loadScheduleSlots(&config.ToolConfig{}, "dependabutler.yml"); err != nil {
+		t.Errorf("loadScheduleSlots() failed without schedule-slots: %v", err)
+	}
+}
+
+func TestSlotSchedule(t *testing.T) {
+	slots := loadTestScheduleSlots(t)
+	rulesets := func(names ...string) func() ([]string, error) {
+		return func() ([]string, error) { return names, nil }
+	}
+
+	for _, tt := range []struct {
+		name     string
+		repo     string
+		rulesets func() ([]string, error)
+		timezone string
+	}{
+		{"audited by ruleset", "audited-repo", rulesets("default", "audited"), "Europe/Berlin"},
+		{"opted in by file", "opted-in", rulesets("default"), "Europe/Berlin"},
+		{"everything else", "plain-repo", rulesets("default"), "UTC"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			schedule, err := slotSchedule(slots, tt.repo, tt.rulesets)
+			if err != nil {
+				t.Fatalf("slotSchedule() failed: %v", err)
+			}
+
+			if schedule.Interval != "cron" || schedule.Cronjob == "" || schedule.Timezone != tt.timezone {
+				t.Errorf("slotSchedule() = %+v, expected a cron schedule in %v", schedule, tt.timezone)
+			}
+		})
+	}
+}
+
+func TestSlotScheduleFailsWhenRulesetsCannotBeRead(t *testing.T) {
+	slots := loadTestScheduleSlots(t)
+
+	_, err := slotSchedule(slots, "some-repo", func() ([]string, error) { return nil, errors.New("forbidden") })
+
+	if err == nil {
+		t.Errorf("slotSchedule() succeeded, expected the ruleset error")
+	}
+}
+
+func TestSlotScheduleWithoutSlotsReadsNoRulesets(t *testing.T) {
+	schedule, err := slotSchedule(nil, "some-repo", func() ([]string, error) {
+		t.Errorf("rulesets read without schedule-slots")
+		return nil, nil
+	})
+
+	if schedule != nil || err != nil {
+		t.Errorf("slotSchedule() = %v, %v, expected nil, nil", schedule, err)
+	}
+}
+
+func TestSlotScheduleSkipsRulesetsOfAReposFileRepo(t *testing.T) {
+	slots := &config.ScheduleSlots{Windows: []config.SlotWindow{
+		{Name: "office", Hours: []int{10}, Timezone: "UTC", Rulesets: []string{"audited"}, ReposFile: "office.txt"},
+		{Name: "early", Hours: []int{2}, Timezone: "UTC"},
+	}}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "office.txt"), []byte("opted-in\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := slots.LoadReposFiles(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	schedule, err := slotSchedule(slots, "opted-in", func() ([]string, error) {
+		return nil, errors.New("rulesets read although the repos-file selects the repo")
+	})
+
+	if err != nil || schedule == nil || !strings.HasPrefix(schedule.Cronjob, "0 10 ") {
+		t.Errorf("slotSchedule() = %v, %v, expected a schedule in the office window", schedule, err)
+	}
+}
+
+func TestSlotScheduleReadsRulesetsOnlyWhenAWindowUsesThem(t *testing.T) {
+	slots := &config.ScheduleSlots{Windows: []config.SlotWindow{{Name: "early", Hours: []int{2}, Timezone: "UTC"}}}
+
+	schedule, err := slotSchedule(slots, "some-repo", func() ([]string, error) {
+		t.Errorf("rulesets read although no window uses them")
+		return nil, nil
+	})
+
+	if err != nil || schedule == nil || schedule.Cronjob == "" {
+		t.Errorf("slotSchedule() = %v, %v, expected a schedule", schedule, err)
+	}
+}
+
+func TestLoadEnforceReadsFilesNextToTheConfig(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "dependabutler.yml")
+	if err := os.WriteFile(filepath.Join(dir, "rollout.txt"), []byte("in-wave\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	toolConfig := &config.ToolConfig{Enforce: &config.Enforce{Fields: []string{"cooldown"}, ReposFile: "rollout.txt"}}
+	if err := loadEnforce(toolConfig, configFile); err != nil {
+		t.Fatalf("loadEnforce() failed: %v", err)
+	}
+
+	if toolConfig.Enforce.FieldsFor("in-wave") == nil || toolConfig.Enforce.FieldsFor("later-wave") != nil {
+		t.Errorf("FieldsFor() does not follow the repos-file next to the config")
+	}
+}
+
+func TestLoadEnforceWithoutEnforce(t *testing.T) {
+	if err := loadEnforce(&config.ToolConfig{}, "dependabutler.yml"); err != nil {
+		t.Errorf("loadEnforce() failed without enforce: %v", err)
+	}
+}
+
+func TestPullRequestConfigForOnlyEnforcedChanges(t *testing.T) {
+	toolConfig := config.ToolConfig{PullRequestParameters: config.PullRequestParameters{PRTitle: "update", EnforcePRTitle: "enforce"}}
+	enforced := []config.EnforcedUpdateInfo{{Type: "npm", Directory: "/", Fields: []string{"cooldown"}}}
+
+	onlyEnforced := pullRequestConfig(toolConfig, config.ChangeInfo{EnforcedUpdates: enforced})
+	mixed := pullRequestConfig(toolConfig, config.ChangeInfo{EnforcedUpdates: enforced, NewUpdates: []config.UpdateInfo{{Type: "gomod"}}})
+
+	if onlyEnforced.PullRequestParameters.PRTitle != "enforce" || mixed.PullRequestParameters.PRTitle != "update" {
+		t.Errorf("titles: only enforced %q, mixed %q; expected enforce and update",
+			onlyEnforced.PullRequestParameters.PRTitle, mixed.PullRequestParameters.PRTitle)
+	}
+}
+
+func TestDirectoryGrouping(t *testing.T) {
+	property := func(value string, err error) func() (string, error) {
+		return func() (string, error) { return value, err }
+	}
+	withProperty := &config.DirectoryGrouping{Default: "global", Property: "dependabot-grouping"}
+
+	for _, tt := range []struct {
+		name     string
+		grouping *config.DirectoryGrouping
+		property func() (string, error)
+		mode     string
+		wantErr  bool
+	}{
+		{"off", nil, nil, "", false},
+		{"no property", &config.DirectoryGrouping{Default: "per-app"}, nil, "per-app", false},
+		{"property set", withProperty, property("per-app", nil), "per-app", false},
+		{"property not set", withProperty, property("", nil), "global", false},
+		{"property cannot be read", withProperty, property("", errors.New("forbidden")), "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mode, err := directoryGrouping(tt.grouping, tt.property)
+
+			if (err != nil) != tt.wantErr || mode != tt.mode {
+				t.Errorf("directoryGrouping() = %q, %v; expected %q, error %v", mode, err, tt.mode, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCheckLocalDirectoryExists(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "app"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "file"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		directory string
+		exists    bool
+	}{
+		{"/app", true},
+		{"/missing", false},
+		{"/file", false},
+		{"/file/below-a-file", false},
+	} {
+		exists, err := CheckLocalDirectoryExists(tt.directory, config.CheckDirectoryExistsParameters{Directory: dir})
+
+		if err != nil || exists != tt.exists {
+			t.Errorf("CheckLocalDirectoryExists(%q) = %v, %v, expected %v, nil", tt.directory, exists, err, tt.exists)
+		}
+	}
+}
+
+func TestGetUpdatedConfigYamlFailsWhenADirectoryCannotBeChecked(t *testing.T) {
+	failing := func(string, config.CheckDirectoryExistsParameters) (bool, error) {
+		return false, errors.New("502 Bad Gateway")
+	}
+	current := []byte("version: 2\nupdates:\n  - package-ecosystem: docker\n    directory: /app\n    schedule:\n      interval: weekly\n")
+
+	yamlContent, _, err := GetUpdatedConfigYaml(current, nil, config.ToolConfig{}, config.RepoSettings{}, "repo",
+		LoadLocalFileContent, config.LoadFileContentParameters{}, failing, config.CheckDirectoryExistsParameters{})
+
+	if err == nil || yamlContent != nil {
+		t.Errorf("GetUpdatedConfigYaml() = %q, %v, expected no content and an error", yamlContent, err)
+	}
+}
+
+func TestLocalRepoName(t *testing.T) {
+	if got := localRepoName("given", "/some/dir"); got != "given" {
+		t.Errorf("localRepoName() = %q, expected the -repo value", got)
+	}
+	if got := localRepoName("", "/some/my-repo/"); got != "my-repo" {
+		t.Errorf("localRepoName() = %q, expected the directory name", got)
+	}
+}
 
 func TestRemoteRepoNames(t *testing.T) {
 	dir := t.TempDir()

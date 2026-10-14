@@ -348,7 +348,7 @@ func TestAddManifest(t *testing.T) {
 		{"docker", "other_app/sub/folder/Dockerfile", 3, "/other_app/sub/folder", "weekly"},
 	} {
 		changeInfo := ChangeInfo{}
-		config.ProcessManifest(tt.manifestFile, tt.manifestType, toolConfig, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
+		config.ProcessManifest(tt.manifestFile, tt.manifestType, toolConfig, RepoSettings{}, &changeInfo, LoadFileContentDummy, LoadFileContentParameters{})
 		// check the number of expected elements
 		gotCount := len(config.Updates)
 		if gotCount != tt.expectedCount {
@@ -493,7 +493,7 @@ update-types:
 
 	// Test marshaling Group with AppliesTo field
 	groupWithAppliesTo := Group{
-		Separator:       ",",
+		DependencyType:  ",",
 		Patterns:        []string{"axios", "fetch-mock"},
 		ExcludePatterns: []string{"@axios/types"},
 		UpdateTypes:     []string{"major", "minor"},
@@ -518,9 +518,9 @@ update-types:
 
 	// Test marshaling Group with empty AppliesTo field - should be omitted in output
 	groupWithEmptyAppliesTo := Group{
-		Separator:   "/",
-		Patterns:    []string{"webpack*"},
-		UpdateTypes: []string{"patch"},
+		DependencyType: "/",
+		Patterns:       []string{"webpack*"},
+		UpdateTypes:    []string{"patch"},
 	}
 
 	marshaledEmpty, err := yaml.Marshal(groupWithEmptyAppliesTo)
@@ -539,7 +539,7 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 	tests := []struct {
 		name     string
 		update   Update
-		expected map[string]Group
+		expected Groups
 	}{
 		{
 			name: "No groups",
@@ -555,31 +555,31 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 			update: Update{
 				PackageEcosystem: "npm",
 				Directory:        "/",
-				Groups:           map[string]Group{},
+				Groups:           Groups{},
 			},
-			expected: map[string]Group{},
+			expected: Groups{},
 		},
 		{
 			name: "Already prefixed groups",
 			update: Update{
 				PackageEcosystem: "npm",
 				Directory:        "/",
-				Groups: map[string]Group{
-					"01_frontend": {
+				Groups: Groups{
+					{Name: "01_frontend", Group: Group{
 						Patterns: []string{"react*", "vue*"},
-					},
-					"02_backend": {
+					}},
+					{Name: "02_backend", Group: Group{
 						Patterns: []string{"express*", "fastify*"},
-					},
+					}},
 				},
 			},
-			expected: map[string]Group{
-				"01_frontend": {
+			expected: Groups{
+				{Name: "01_frontend", Group: Group{
 					Patterns: []string{"react*", "vue*"},
-				},
-				"02_backend": {
+				}},
+				{Name: "02_backend", Group: Group{
 					Patterns: []string{"express*", "fastify*"},
-				},
+				}},
 			},
 		},
 		{
@@ -587,22 +587,22 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 			update: Update{
 				PackageEcosystem: "npm",
 				Directory:        "/",
-				Groups: map[string]Group{
-					"01_frontend": {
+				Groups: Groups{
+					{Name: "01_frontend", Group: Group{
 						Patterns: []string{"react*", "vue*"},
-					},
-					"backend": {
+					}},
+					{Name: "backend", Group: Group{
 						Patterns: []string{"express*", "fastify*"},
-					},
+					}},
 				},
 			},
-			expected: map[string]Group{
-				"01_frontend": {
+			expected: Groups{
+				{Name: "01_frontend", Group: Group{
 					Patterns: []string{"react*", "vue*"},
-				},
-				"02_backend": {
+				}},
+				{Name: "02_backend", Group: Group{
 					Patterns: []string{"express*", "fastify*"},
-				},
+				}},
 			},
 		},
 		{
@@ -610,28 +610,28 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 			update: Update{
 				PackageEcosystem: "npm",
 				Directory:        "/",
-				Groups: map[string]Group{
-					"frontend": {
+				Groups: Groups{
+					{Name: "frontend", Group: Group{
 						Patterns: []string{"react*", "vue*"},
-					},
-					"backend": {
+					}},
+					{Name: "backend", Group: Group{
 						Patterns: []string{"express*", "fastify*"},
-					},
-					"tooling": {
+					}},
+					{Name: "tooling", Group: Group{
 						Patterns: []string{"webpack*", "babel*"},
-					},
+					}},
 				},
 			},
-			expected: map[string]Group{
-				"01_backend": {
-					Patterns: []string{"express*", "fastify*"},
-				},
-				"02_frontend": {
+			expected: Groups{
+				{Name: "01_frontend", Group: Group{
 					Patterns: []string{"react*", "vue*"},
-				},
-				"03_tooling": {
+				}},
+				{Name: "02_backend", Group: Group{
+					Patterns: []string{"express*", "fastify*"},
+				}},
+				{Name: "03_tooling", Group: Group{
 					Patterns: []string{"webpack*", "babel*"},
-				},
+				}},
 			},
 		},
 		{
@@ -639,22 +639,22 @@ func TestEnsureStableGroupPrefixes(t *testing.T) {
 			update: Update{
 				PackageEcosystem: "npm",
 				Directory:        "/",
-				Groups: map[string]Group{
-					"01_frontend": {
+				Groups: Groups{
+					{Name: "01_frontend", Group: Group{
 						Patterns: []string{"react*", "vue*"},
-					},
-					"01_backend": {
+					}},
+					{Name: "01_backend", Group: Group{
 						Patterns: []string{"express*", "fastify*"},
-					},
+					}},
 				},
 			},
-			expected: map[string]Group{
-				"01_backend": {
-					Patterns: []string{"express*", "fastify*"},
-				},
-				"02_frontend": {
+			expected: Groups{
+				{Name: "01_frontend", Group: Group{
 					Patterns: []string{"react*", "vue*"},
-				},
+				}},
+				{Name: "02_backend", Group: Group{
+					Patterns: []string{"express*", "fastify*"},
+				}},
 			},
 		},
 	}
@@ -786,7 +786,7 @@ func TestCoolDownWithUpdateFlagFalse(t *testing.T) {
 			},
 		}
 
-		update := createUpdateEntry("npm", "/", toolConfig)
+		update := createUpdateEntry("npm", "/", toolConfig, nil)
 
 		expected := Cooldown{
 			SemverMajorDays: 21,
@@ -1201,13 +1201,75 @@ func TestCreateUpdateEntryAppliesScheduleAndCommitMessageOverrides(t *testing.T)
 		},
 	}
 
-	update := createUpdateEntry("npm", "/", toolConfig)
+	update := createUpdateEntry("npm", "/", toolConfig, nil)
 
 	if update.Schedule.Interval != "cron" || update.Schedule.Cronjob != "0 3 * * 1" || update.Schedule.Day != "" {
 		t.Errorf("schedule override not applied, got %+v", update.Schedule)
 	}
 	if update.CommitMessage.Prefix != "npm" {
 		t.Errorf("commit-message override not applied, got %+v", update.CommitMessage)
+	}
+}
+
+func TestCreateUpdateEntryReplacesTheScheduleWithTheSlot(t *testing.T) {
+	toolConfig := ToolConfig{
+		UpdateDefaults: UpdateDefaults{
+			Schedule:      Schedule{Interval: "weekly", Day: "sunday", Time: "05:00", Timezone: "Europe/Berlin"},
+			CommitMessage: CommitMessage{Prefix: "default"},
+		},
+		UpdateOverrides: map[string]UpdateDefaults{
+			"docker": {Schedule: Schedule{Interval: "daily"}},
+		},
+	}
+	slotSchedule := &Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
+
+	for _, ecosystem := range []string{"npm", "docker"} {
+		update := createUpdateEntry(ecosystem, "/", toolConfig, slotSchedule)
+
+		if !reflect.DeepEqual(update.Schedule, *slotSchedule) {
+			t.Errorf("%v schedule = %+v, expected the slot %+v", ecosystem, update.Schedule, *slotSchedule)
+		}
+		if update.CommitMessage.Prefix != "default" {
+			t.Errorf("%v commit-message = %+v, expected the default", ecosystem, update.CommitMessage)
+		}
+	}
+}
+
+func TestUpdateConfigStampsTheSlotOnNewEntriesOnly(t *testing.T) {
+	dependabotConfig, err := ParseDependabotConfig([]byte(`
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: sunday
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	slotSchedule := &Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
+	directoryExists := func(string, CheckDirectoryExistsParameters) (bool, error) { return true, nil }
+
+	dependabotConfig.UpdateConfig(map[string]string{"package.json": "npm", "go.mod": "gomod"}, ToolConfig{}, RepoSettings{SlotSchedule: slotSchedule},
+		LoadFileContentDummy, LoadFileContentParameters{}, directoryExists, CheckDirectoryExistsParameters{})
+
+	for _, update := range dependabotConfig.Updates {
+		switch update.PackageEcosystem {
+		case "npm":
+			if update.Schedule.Interval != "weekly" || update.Schedule.Day != "sunday" {
+				t.Errorf("existing npm entry changed to %+v", update.Schedule)
+			}
+		case "gomod":
+			if !reflect.DeepEqual(update.Schedule, *slotSchedule) {
+				t.Errorf("new gomod entry schedule = %+v, expected the slot", update.Schedule)
+			}
+		}
+	}
+
+	if len(dependabotConfig.Updates) != 2 {
+		t.Errorf("expected 2 update entries, got %d", len(dependabotConfig.Updates))
 	}
 }
 
@@ -1238,8 +1300,8 @@ update-overrides:
 		t.Fatalf("ParseToolConfig() failed: %v", err)
 	}
 
-	npmUpdate := createUpdateEntry("npm", "/", *toolConfig)
-	pipUpdate := createUpdateEntry("pip", "/", *toolConfig)
+	npmUpdate := createUpdateEntry("npm", "/", *toolConfig, nil)
+	pipUpdate := createUpdateEntry("pip", "/", *toolConfig, nil)
 
 	expectedNpmSchedule := Schedule{Interval: "weekly", Timezone: "UTC"}
 	if !reflect.DeepEqual(npmUpdate.Schedule, expectedNpmSchedule) {

@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -44,6 +45,9 @@ type ToolConfig struct {
 	PullRequestParameters         PullRequestParameters        `yaml:"pull-request-parameters"`
 	StableGroupPrefixes           *bool                        `yaml:"stable-group-prefixes,omitempty"`
 	UpdateMissingCooldownSettings *bool                        `yaml:"update-missing-cooldown-settings,omitempty"`
+	ScheduleSlots                 *ScheduleSlots               `yaml:"schedule-slots,omitempty"`
+	Enforce                       *Enforce                     `yaml:"enforce,omitempty"`
+	DirectoryGrouping             *DirectoryGrouping           `yaml:"directory-grouping,omitempty"`
 }
 
 // DefaultRegistries holds the default registries for new update definitions
@@ -59,6 +63,9 @@ type PullRequestParameters struct {
 	BranchNameRandomSuffix bool     `yaml:"branch-name-random-suffix"`
 	SleepAfterPRAction     int      `yaml:"sleep-after-pr-action"`
 	PRLabels               []string `yaml:"pr-labels,omitempty"`
+	EnforceCommitMessage   string   `yaml:"enforce-commit-message,omitempty"`
+	EnforcePRTitle         string   `yaml:"enforce-pr-title,omitempty"`
+	EnforcePRNote          string   `yaml:"enforce-pr-note,omitempty"`
 }
 
 // DefaultRegistry holds the config items of a default registry
@@ -79,6 +86,7 @@ type UpdateDefaults struct {
 	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution"`
 	RebaseStrategy                string        `yaml:"rebase-strategy"`
 	Cooldown                      Cooldown      `yaml:"cooldown"`
+	Groups                        Groups        `yaml:"groups,omitempty"`
 }
 
 // DependabotConfig holds the configuration defined in dependabot.yml
@@ -107,20 +115,20 @@ type Ignore struct {
 
 // Update holds the config items of an update definition
 type Update struct {
-	PackageEcosystem              string           `yaml:"package-ecosystem"`
-	Directory                     string           `yaml:"directory,omitempty"`
-	Directories                   []string         `yaml:"directories,omitempty"`
-	Schedule                      Schedule         `yaml:"schedule,omitempty"`
-	Registries                    []string         `yaml:"registries,omitempty"`
-	CommitMessage                 CommitMessage    `yaml:"commit-message,omitempty"`
-	OpenPullRequestsLimit         *int             `yaml:"open-pull-requests-limit,omitempty"`
-	Assignees                     []string         `yaml:"assignees,omitempty"`
-	Allow                         []Allow          `yaml:"allow,omitempty"`
-	Ignore                        []Ignore         `yaml:"ignore,omitempty"`
-	Groups                        map[string]Group `yaml:"groups,omitempty"`
-	InsecureExternalCodeExecution string           `yaml:"insecure-external-code-execution,omitempty"`
-	Labels                        []string         `yaml:"labels,omitempty"`
-	Milestone                     int              `yaml:"milestone,omitempty"`
+	PackageEcosystem              string        `yaml:"package-ecosystem"`
+	Directory                     string        `yaml:"directory,omitempty"`
+	Directories                   []string      `yaml:"directories,omitempty"`
+	Schedule                      Schedule      `yaml:"schedule,omitempty"`
+	Registries                    []string      `yaml:"registries,omitempty"`
+	CommitMessage                 CommitMessage `yaml:"commit-message,omitempty"`
+	OpenPullRequestsLimit         *int          `yaml:"open-pull-requests-limit,omitempty"`
+	Assignees                     []string      `yaml:"assignees,omitempty"`
+	Allow                         []Allow       `yaml:"allow,omitempty"`
+	Ignore                        []Ignore      `yaml:"ignore,omitempty"`
+	Groups                        Groups        `yaml:"groups,omitempty"`
+	InsecureExternalCodeExecution string        `yaml:"insecure-external-code-execution,omitempty"`
+	Labels                        []string      `yaml:"labels,omitempty"`
+	Milestone                     int           `yaml:"milestone,omitempty"`
 	PullRequestBranchName         struct {
 		Separator string         `yaml:"separator"`
 		Unknown   map[string]any `yaml:",inline"`
@@ -136,11 +144,12 @@ type Update struct {
 
 // Group holds the config items of a group definition
 type Group struct {
-	Separator       string         `yaml:"dependency-type,omitempty"`
+	DependencyType  string         `yaml:"dependency-type,omitempty"`
 	Patterns        []string       `yaml:"patterns,omitempty"`
 	ExcludePatterns []string       `yaml:"exclude-patterns,omitempty"`
 	UpdateTypes     []string       `yaml:"update-types,omitempty"`
 	AppliesTo       string         `yaml:"applies-to,omitempty"`
+	GroupBy         string         `yaml:"group-by,omitempty"`
 	Unknown         map[string]any `yaml:",inline"`
 }
 
@@ -205,6 +214,13 @@ type Cooldown struct {
 	Unknown         map[string]any `yaml:",inline"`
 }
 
+// RepoSettings holds the settings that depend on the repository being processed.
+type RepoSettings struct {
+	SlotSchedule      *Schedule
+	EnforcedFields    []string
+	DirectoryGrouping string
+}
+
 // ChangeInfo holds the changes applied to a config.
 type ChangeInfo struct {
 	NewRegistries     []RegistryInfo
@@ -212,12 +228,20 @@ type ChangeInfo struct {
 	NewUpdates        []UpdateInfo
 	FixedUpdates      []UpdateInfo
 	RemovedUpdates    []UpdateInfo
+	EnforcedUpdates   []EnforcedUpdateInfo
 }
 
 // RegistryInfo holds the properties of a registry, for the change message.
 type RegistryInfo struct {
 	Type string
 	Name string
+}
+
+// EnforcedUpdateInfo holds the fields of an existing update that were set to the configured values, for the change message.
+type EnforcedUpdateInfo struct {
+	Type      string
+	Directory string
+	Fields    []string
 }
 
 // UpdateInfo holds the properties of an update, for the change message.
@@ -261,8 +285,8 @@ type KeyValue struct {
 // LoadFileContent is a function type for loading the content of a file.
 type LoadFileContent func(file string, params LoadFileContentParameters) string
 
-// CheckDirectoryExists is a function type for checking if a folder exists.
-type CheckDirectoryExists func(directory string, params CheckDirectoryExistsParameters) bool
+// CheckDirectoryExists is a function type for checking if a folder exists. It returns an error when it cannot tell.
+type CheckDirectoryExists func(directory string, params CheckDirectoryExistsParameters) (bool, error)
 
 // Parse parses the config.yml format
 func (config *ToolConfig) Parse(data []byte) error {
@@ -271,6 +295,53 @@ func (config *ToolConfig) Parse(data []byte) error {
 	}
 
 	config.dropUnknownUpdateKeys()
+
+	if err := config.validateGroups(); err != nil {
+		return err
+	}
+
+	if config.ScheduleSlots != nil {
+		if err := config.ScheduleSlots.validate(); err != nil {
+			return err
+		}
+	}
+
+	if config.DirectoryGrouping != nil {
+		if err := config.DirectoryGrouping.validate(); err != nil {
+			return err
+		}
+	}
+
+	if config.Enforce != nil {
+		return config.validateEnforce()
+	}
+
+	return nil
+}
+
+func (config *ToolConfig) validateEnforce() error {
+	if err := config.Enforce.validate(); err != nil {
+		return err
+	}
+
+	defaults := config.UpdateDefaults
+	fields := config.Enforce.Fields
+	if util.Contains(fields, EnforceSchedule) && config.ScheduleSlots == nil && !hasScheduleConfig(defaults.Schedule) {
+		return errors.New("enforcing the schedule needs schedule-slots or a schedule in update-defaults")
+	}
+	if util.Contains(fields, EnforceCooldown) && !hasCooldownConfig(defaults.Cooldown) {
+		return errors.New("enforcing the cooldown needs a cooldown in update-defaults")
+	}
+	if util.Contains(fields, EnforceOpenPullRequestsLimit) && defaults.OpenPullRequestsLimit == nil {
+		return errors.New("enforcing the open-pull-requests-limit needs one in update-defaults")
+	}
+	if util.Contains(fields, EnforceGroups) && len(defaults.Groups) == 0 {
+		return errors.New("enforcing the groups needs groups in update-defaults")
+	}
+	if util.Contains(fields, EnforceDirectoryGrouping) && config.DirectoryGrouping == nil {
+		return errors.New("enforcing directory-grouping needs the directory-grouping block")
+	}
+
 	return nil
 }
 
@@ -288,6 +359,10 @@ func dropUnknownKeysOf(section string, defaults *UpdateDefaults) {
 	dropUnknownKeys(section+".schedule", &defaults.Schedule.Unknown)
 	dropUnknownKeys(section+".commit-message", &defaults.CommitMessage.Unknown)
 	dropUnknownKeys(section+".cooldown", &defaults.Cooldown.Unknown)
+
+	for i := range defaults.Groups {
+		dropUnknownKeys(section+".groups."+defaults.Groups[i].Name, &defaults.Groups[i].Group.Unknown)
+	}
 }
 
 func dropUnknownKeys(section string, unknown *map[string]any) {
@@ -444,7 +519,7 @@ func GetManifestPath(manifestFile string, manifestType string) string {
 
 // ProcessManifest adds config for a new manifest file to dependabot.yml if necessary
 func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestType string, toolConfig ToolConfig,
-	changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
+	repoSettings RepoSettings, changeInfo *ChangeInfo, loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters,
 ) {
 	if manifestFile == "" || manifestType == "" {
 		return
@@ -485,19 +560,29 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 	// check if the manifest itself is covered, and add it if necessary
 	if !config.IsManifestCovered(manifestFile, manifestType, updateRegistries) {
 		// create the new update section using the default properties
-		update := createUpdateEntry(manifestType, manifestPath, toolConfig)
+		update := createUpdateEntry(manifestType, manifestPath, toolConfig, repoSettings.SlotSchedule)
 		// add new registries if required
 		if len(updateRegistries) > 0 {
 			update.Registries = updateRegistries
 		}
+
+		// in global mode, add the directory to an update that can take it
+		if repoSettings.DirectoryGrouping == DirectoriesGlobal {
+			if i := compatibleUpdate(config.Updates, update); i >= 0 {
+				config.Updates[i].addDirectories(update.directories(), update.Registries)
+				changeInfo.NewUpdates = append(changeInfo.NewUpdates, UpdateInfo{Type: manifestType, Directory: manifestPath, File: manifestFile})
+				return
+			}
+		}
+
 		// add the update block, to the config
 		config.Updates = append(config.Updates, update)
 		changeInfo.NewUpdates = append(changeInfo.NewUpdates, UpdateInfo{Type: manifestType, Directory: manifestPath, File: manifestFile})
 	}
 }
 
-// createUpdateEntry creates a new update entry for a manifest file
-func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig) Update {
+// createUpdateEntry creates a new update entry for a manifest file. A slot schedule, if set, replaces any other schedule.
+func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig, slotSchedule *Schedule) Update {
 	update := Update{
 		PackageEcosystem:              manifestType,
 		Directory:                     manifestPath,
@@ -507,11 +592,26 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		RebaseStrategy:                toolConfig.UpdateDefaults.RebaseStrategy,
 		InsecureExternalCodeExecution: toolConfig.UpdateDefaults.InsecureExternalCodeExecution,
 		Cooldown:                      toolConfig.UpdateDefaults.Cooldown,
+		Groups:                        toolConfig.UpdateDefaults.Groups,
 	}
 	// apply override properties, if defined
-	if overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]; hasOverrides {
+	overrides, hasOverrides := toolConfig.UpdateOverrides[manifestType]
+	if hasOverrides {
 		applyOverrides(&update, overrides)
 	}
+
+	if slotSchedule != nil {
+		if hasOverrides && hasScheduleConfig(overrides.Schedule) {
+			log.Printf("WARN  The schedule override for %v is ignored, schedule-slots sets the schedule.", manifestType)
+		}
+
+		update.Schedule = *slotSchedule
+	}
+
+	if toolConfig.stableGroupPrefixes() {
+		ensureStableGroupPrefixes(&update)
+	}
+
 	fixNewUpdateConfig(&update, manifestType)
 	return update
 }
@@ -567,8 +667,17 @@ func (config *DependabotConfig) ToYaml() []byte {
 		sort.Slice(config.Updates, func(i, j int) bool {
 			a := config.Updates[i]
 			b := config.Updates[j]
-			return (a.PackageEcosystem < b.PackageEcosystem) ||
-				(a.PackageEcosystem == b.PackageEcosystem && a.Directory < b.Directory)
+			if a.PackageEcosystem != b.PackageEcosystem {
+				return a.PackageEcosystem < b.PackageEcosystem
+			}
+			if a.Directory != b.Directory {
+				return a.Directory < b.Directory
+			}
+			if updateDirectories(&a) != updateDirectories(&b) {
+				return updateDirectories(&a) < updateDirectories(&b)
+			}
+
+			return a.TargetBranch < b.TargetBranch
 		})
 	}
 
@@ -605,16 +714,17 @@ func (config *DependabotConfig) ToYaml() []byte {
 }
 
 // UpdateConfig updates a dependabot config with a list of manifests found and the tool's config.
-func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig,
+func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolConfig ToolConfig, repoSettings RepoSettings,
 	loadFileFn LoadFileContent, loadFileParams LoadFileContentParameters, checkDirectoryExists CheckDirectoryExists,
 	checkDirectoryExistsParams CheckDirectoryExistsParameters,
-) ChangeInfo {
+) (ChangeInfo, error) {
 	changeInfo := ChangeInfo{
 		NewRegistries:     []RegistryInfo{},
 		RemovedRegistries: []RegistryInfo{},
 		NewUpdates:        []UpdateInfo{},
 		FixedUpdates:      []UpdateInfo{},
 		RemovedUpdates:    []UpdateInfo{},
+		EnforcedUpdates:   []EnforcedUpdateInfo{},
 	}
 
 	// Base directories must be processed before subdirectories (/ before /app).
@@ -629,37 +739,29 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		return len(path1) < len(path2) || len(path1) == len(path2) && path1 < path2
 	})
 
-	// Remove updates with non-existing directories
-	var existingUpdates []Update
-	for _, update := range config.Updates {
-		if checkDirectoryExists(update.Directory, checkDirectoryExistsParams) {
-			existingUpdates = append(existingUpdates, update)
-		} else {
-			changeInfo.RemovedUpdates = append(changeInfo.RemovedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
-		}
+	if err := config.removeMissingDirectories(checkDirectoryExists, checkDirectoryExistsParams, &changeInfo); err != nil {
+		return ChangeInfo{}, err
 	}
-	config.Updates = existingUpdates
 
 	// Fix existing updates, if necessary
-	for i := range config.Updates {
-		update := &config.Updates[i]
-		if fixExistingUpdateConfig(update) || addCooldownToExistingUpdate(update, toolConfig) {
-			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
-		}
+	config.fixExistingUpdates(toolConfig, repoSettings, &changeInfo)
+
+	if util.Contains(repoSettings.EnforcedFields, EnforceDirectoryGrouping) {
+		config.groupDirectories(repoSettings.DirectoryGrouping, &changeInfo)
 	}
 
-	// Iterate manifest files and check if they are covered by the current config file
-	for _, manifest := range manifestsSorted {
-		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, &changeInfo, loadFileFn, loadFileParams)
-	}
-
-	// Handle stable group prefixes if enabled
-	if toolConfig.StableGroupPrefixes == nil || *toolConfig.StableGroupPrefixes {
+	// Handle stable group prefixes if enabled, before new manifests are compared with the existing updates
+	if toolConfig.stableGroupPrefixes() {
 		for i := range config.Updates {
 			if len(config.Updates[i].Groups) > 0 {
 				ensureStableGroupPrefixes(&config.Updates[i])
 			}
 		}
+	}
+
+	// Iterate manifest files and check if they are covered by the current config file
+	for _, manifest := range manifestsSorted {
+		config.ProcessManifest(manifest.Key, manifest.Value, toolConfig, repoSettings, &changeInfo, loadFileFn, loadFileParams)
 	}
 
 	// Check if there are unused registries to be removed
@@ -677,7 +779,31 @@ func (config *DependabotConfig) UpdateConfig(manifests map[string]string, toolCo
 		}
 	}
 
-	return changeInfo
+	return changeInfo, nil
+}
+
+// fixExistingUpdates fixes existing updates and sets their enforced fields, and records the changes.
+func (config *DependabotConfig) fixExistingUpdates(toolConfig ToolConfig, repoSettings RepoSettings, changeInfo *ChangeInfo) {
+	cooldownEnforced := util.Contains(repoSettings.EnforcedFields, EnforceCooldown)
+	for i := range config.Updates {
+		update := &config.Updates[i]
+		if fixExistingUpdateConfig(update) || (!cooldownEnforced && addCooldownToExistingUpdate(update, toolConfig)) {
+			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
+		}
+
+		if fields := enforceUpdateConfig(update, toolConfig, repoSettings.SlotSchedule, repoSettings.EnforcedFields); len(fields) > 0 {
+			changeInfo.EnforcedUpdates = append(changeInfo.EnforcedUpdates, EnforcedUpdateInfo{Type: update.PackageEcosystem, Directory: updateDirectories(update), Fields: fields})
+		}
+	}
+}
+
+// updateDirectories returns the directory of an update, or its directories separated by commas.
+func updateDirectories(update *Update) string {
+	if update.Directory != "" {
+		return update.Directory
+	}
+
+	return strings.Join(update.Directories, ", ")
 }
 
 // applyOverrides updates a config for an Update, using overridden values
@@ -699,6 +825,9 @@ func applyOverrides(update *Update, overrides UpdateDefaults) {
 	}
 	if hasCooldownConfig(overrides.Cooldown) {
 		update.Cooldown = overrides.Cooldown
+	}
+	if len(overrides.Groups) > 0 {
+		update.Groups = overrides.Groups
 	}
 }
 
@@ -774,7 +903,8 @@ func fixExistingUpdateConfig(update *Update) bool {
 }
 
 // ensureStableGroupPrefixes ensures all group names have a unique numeric prefix (01_, 02_, 03_, etc.)
-// If a group doesn't have a prefix, it adds one.
+// If a group doesn't have a prefix, it adds one. Groups are numbered in the order they are written, which is the order
+// Dependabot matches them in.
 func ensureStableGroupPrefixes(update *Update) {
 	if len(update.Groups) == 0 {
 		return
@@ -789,7 +919,8 @@ func ensureStableGroupPrefixes(update *Update) {
 	baseNameToOrigName := make(map[string]string)
 	origNames := make([]string, 0, len(update.Groups))
 
-	for name := range update.Groups {
+	for _, named := range update.Groups {
+		name := named.Name
 		// Check if name already has a numeric prefix
 		matches := prefixRegex.FindStringSubmatch(name)
 		var baseName string
@@ -819,11 +950,8 @@ func ensureStableGroupPrefixes(update *Update) {
 		return
 	}
 
-	// Sort original names for stable ordering
-	sort.Strings(origNames)
-
-	// Create a new map with properly prefixed groups
-	newGroups := make(map[string]Group)
+	// Create new groups with proper prefixes, in the order they are written
+	newGroups := make(Groups, 0, len(origNames))
 	for i, origName := range origNames {
 		baseName := origName
 		// If it has a prefix, extract the base name
@@ -832,10 +960,11 @@ func ensureStableGroupPrefixes(update *Update) {
 			baseName = matches[2]
 		}
 		newName := fmt.Sprintf("%02d_%s", i+1, baseName)
-		newGroups[newName] = update.Groups[origName]
+		group, _ := update.Groups.Get(origName)
+		newGroups = append(newGroups, NamedGroup{Name: newName, Group: group})
 	}
 
-	// Replace the groups with the new prefixed map
+	// Replace the groups with the new prefixed ones
 	update.Groups = newGroups
 }
 
