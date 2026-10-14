@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"hash/fnv"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
+	"go.yaml.in/yaml/v4"
 )
 
 const weekdays = 5
@@ -28,6 +31,60 @@ type SlotWindow struct {
 	Rulesets  []string `yaml:"rulesets,omitempty"`
 	ReposFile string   `yaml:"repos-file,omitempty"`
 	repos     map[string]bool
+}
+
+// UnmarshalYAML rejects unknown keys: a typo would otherwise be dropped without a word.
+func (slots *ScheduleSlots) UnmarshalYAML(node *yaml.Node) error {
+	type plain ScheduleSlots
+	if err := rejectUnknownKeys(node, "schedule-slots", plain{}); err != nil {
+		return err
+	}
+
+	return node.Decode((*plain)(slots))
+}
+
+// UnmarshalYAML rejects unknown keys: a typo like "ruleset" would otherwise put the repos the window selects in the
+// last window.
+func (window *SlotWindow) UnmarshalYAML(node *yaml.Node) error {
+	type plain SlotWindow
+	if err := rejectUnknownKeys(node, "schedule-slots window", plain{}); err != nil {
+		return err
+	}
+
+	return node.Decode((*plain)(window))
+}
+
+// rejectUnknownKeys checks the keys of the mapping itself: keys brought in by a merge key would go unchecked, so merge
+// keys are rejected.
+func rejectUnknownKeys(node *yaml.Node, section string, value any) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("%v must be a mapping", section)
+	}
+
+	known := yamlKeys(reflect.TypeOf(value))
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if key.Value == "<<" {
+			return fmt.Errorf("merge keys (<<) are not supported in %v", section)
+		}
+		if !slices.Contains(known, key.Value) {
+			return fmt.Errorf("unknown key %q in %v, expected one of %v", key.Value, section, known)
+		}
+	}
+
+	return nil
+}
+
+func yamlKeys(structType reflect.Type) []string {
+	var keys []string
+	for i := range structType.NumField() {
+		name, _, _ := strings.Cut(structType.Field(i).Tag.Get("yaml"), ",")
+		if name != "" && name != "-" {
+			keys = append(keys, name)
+		}
+	}
+
+	return keys
 }
 
 func (slots *ScheduleSlots) validate() error {

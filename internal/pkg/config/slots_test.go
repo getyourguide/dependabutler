@@ -78,6 +78,9 @@ func TestParseToolConfigRejectsInvalidScheduleSlots(t *testing.T) {
 		{"no timezone", `[{name: early, hours: [2]}]`, "timezone"},
 		{"unknown timezone", `[{name: early, hours: [2], timezone: Mars/Olympus}]`, "Mars/Olympus"},
 		{"local timezone", `[{name: early, hours: [2], timezone: Local}]`, "Local"},
+		{"window not a mapping", `[early]`, "schedule-slots window must be a mapping"},
+		{"merge key", `[{<<: {hours: [2]}, name: early, timezone: UTC}]`, "merge keys (<<) are not supported"},
+		{"unknown window key", `[{name: early, hours: [2], timezone: UTC, ruleset: [audited]}]`, `unknown key "ruleset"`},
 		{"no default window", `[{name: office, hours: [10], timezone: UTC, repos-file: x.txt}]`, "last window"},
 		{
 			"default window not last",
@@ -97,6 +100,14 @@ func TestParseToolConfigRejectsInvalidScheduleSlots(t *testing.T) {
 				t.Errorf("ParseToolConfig() error = %v, expected it to contain %q", err, tt.error)
 			}
 		})
+	}
+}
+
+func TestParseToolConfigRejectsUnknownScheduleSlotsKey(t *testing.T) {
+	_, err := ParseToolConfig([]byte("schedule-slots:\n  salts: x\n  windows: [{name: early, hours: [2], timezone: UTC}]\n"))
+
+	if err == nil || !strings.Contains(err.Error(), `unknown key "salts" in schedule-slots`) {
+		t.Errorf("ParseToolConfig() error = %v, expected it to reject salts", err)
 	}
 }
 
