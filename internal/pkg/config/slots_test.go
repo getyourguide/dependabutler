@@ -78,6 +78,11 @@ func TestParseToolConfigRejectsInvalidScheduleSlots(t *testing.T) {
 		{"no timezone", `[{name: early, hours: [2]}]`, "timezone"},
 		{"unknown timezone", `[{name: early, hours: [2], timezone: Mars/Olympus}]`, "Mars/Olympus"},
 		{"local timezone", `[{name: early, hours: [2], timezone: Local}]`, "Local"},
+		{"day in upper case", `[{name: early, hours: [2], days: [Monday], timezone: UTC}]`, `day "Monday"`},
+		{"unknown day", `[{name: early, hours: [2], days: [someday], timezone: UTC}]`, `day "someday"`},
+		{"repeated day", `[{name: early, hours: [2], days: [monday, monday], timezone: UTC}]`, "more than once"},
+		{"more runs than days", `[{name: early, hours: [2], days: [monday], timezone: UTC}]`, "runs 2 times a week"},
+		{"negative runs", `[{name: early, hours: [2], runs-per-week: -1, timezone: UTC}]`, "runs -1 times a week"},
 		{"window not a mapping", `[early]`, "schedule-slots window must be a mapping"},
 		{"merge key", `[{<<: {hours: [2]}, name: early, timezone: UTC}]`, "merge keys (<<) are not supported"},
 		{"unknown window key", `[{name: early, hours: [2], timezone: UTC, ruleset: [audited]}]`, `unknown key "ruleset"`},
@@ -100,6 +105,80 @@ func TestParseToolConfigRejectsInvalidScheduleSlots(t *testing.T) {
 				t.Errorf("ParseToolConfig() error = %v, expected it to contain %q", err, tt.error)
 			}
 		})
+	}
+}
+
+func TestParseToolConfigReadsDaysAndRunsPerWeek(t *testing.T) {
+	toolConfig, err := ParseToolConfig([]byte(
+		"schedule-slots:\n  windows: [{name: early, hours: [2], days: [saturday, sunday], runs-per-week: 1, timezone: UTC}]\n"))
+	if err != nil {
+		t.Fatalf("ParseToolConfig() failed: %v", err)
+	}
+
+	window := toolConfig.ScheduleSlots.Windows[0]
+
+	if !reflect.DeepEqual(window.Weekdays(), []string{"saturday", "sunday"}) || window.Runs() != 1 {
+		t.Errorf("Weekdays() = %v, Runs() = %d, expected [saturday sunday] and 1", window.Weekdays(), window.Runs())
+	}
+}
+
+func TestSlotWindowDefaultsToTwiceAWeekOnWeekdays(t *testing.T) {
+	window := SlotWindow{Name: "early", Hours: []int{2}, Timezone: "UTC"}
+
+	if !reflect.DeepEqual(window.Weekdays(), []string{"monday", "tuesday", "wednesday", "thursday", "friday"}) {
+		t.Errorf("Weekdays() = %v, expected Monday to Friday", window.Weekdays())
+	}
+	if window.Runs() != 2 {
+		t.Errorf("Runs() = %d, expected 2", window.Runs())
+	}
+}
+
+func TestSlotCronjobSpreadsTheRunsOverTheWeekdays(t *testing.T) {
+	everyDay := []int{0, 1, 2, 3, 4, 5, 6}
+	workdays := []int{1, 2, 3, 4, 5}
+
+	for _, tt := range []struct {
+		name     string
+		slot     int
+		weekdays []int
+		runs     int
+		cronjob  string
+	}{
+		{"once a week", 3, workdays, 1, "0 2 * * 4"},
+		{"three times on workdays", 0, workdays, 3, "0 2 * * 1,3,5"},
+		{"three times on workdays, wrapping", 3, workdays, 3, "0 2 * * 1,3,4"},
+		{"twice on every day", 0, everyDay, 2, "0 2 * * 0,4"},
+		{"twice on every day, wrapping", 5, everyDay, 2, "0 2 * * 2,5"},
+		{"every day", 0, everyDay, 7, "0 2 * * 0,1,2,3,4,5,6"},
+		{"weekend", 1, []int{0, 6}, 1, "0 2 * * 6"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := slotCronjob(tt.slot, []int{2}, tt.weekdays, tt.runs); got != tt.cronjob {
+				t.Errorf("slotCronjob() = %q, expected %q", got, tt.cronjob)
+			}
+		})
+	}
+}
+
+func TestSlotCronjobUsesEveryWeekdayEquallyOften(t *testing.T) {
+	weekdays := []int{0, 1, 2, 3, 4, 5, 6}
+
+	for runs := 1; runs <= len(weekdays); runs++ {
+		counts := map[string]int{}
+		for slot := range weekdays {
+			for day := range strings.SplitSeq(strings.Fields(slotCronjob(slot, []int{2}, weekdays, runs))[4], ",") {
+				counts[day]++
+			}
+		}
+
+		for day, count := range counts {
+			if count != runs {
+				t.Errorf("with %d runs, day %v is used %d times, expected %d", runs, day, count, runs)
+			}
+		}
+		if len(counts) != len(weekdays) {
+			t.Errorf("with %d runs, %d days are used, expected %d", runs, len(counts), len(weekdays))
+		}
 	}
 }
 
@@ -126,7 +205,7 @@ func TestSlotCronjobPairsEachWeekdayWithTheOneThreeWeekdaysLater(t *testing.T) {
 		{8, "0 2 * * 3,5"},
 		{9, "0 3 * * 3,5"},
 	} {
-		if got := slotCronjob(tt.slot, hours); got != tt.cronjob {
+		if got := slotCronjob(tt.slot, hours, []int{1, 2, 3, 4, 5}, 2); got != tt.cronjob {
 			t.Errorf("slotCronjob(%d) = %q, expected %q", tt.slot, got, tt.cronjob)
 		}
 	}

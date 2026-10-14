@@ -147,8 +147,8 @@ func loadScheduleSlots(toolConfig *config.ToolConfig, configFile string) error {
 
 	log.Printf("INFO  Schedule slots are on, salt %q.", slots.Salt)
 	for _, window := range slots.Windows {
-		log.Printf("INFO  Schedule slots window %q: hours %v in %v, rulesets %v, repos-file %q.",
-			window.Name, window.Hours, window.Timezone, window.Rulesets, window.ReposFile)
+		log.Printf("INFO  Schedule slots window %q: days %v, runs-per-week %d, hours %v in %v, rulesets %v, repos-file %q.",
+			window.Name, window.Weekdays(), window.Runs(), window.Hours, window.Timezone, window.Rulesets, window.ReposFile)
 	}
 
 	return nil

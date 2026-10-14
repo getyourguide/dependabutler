@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,7 +15,14 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-const weekdays = 5
+const defaultRunsPerWeek = 2
+
+var (
+	defaultDays = []string{"monday", "tuesday", "wednesday", "thursday", "friday"}
+	cronWeekday = map[string]int{
+		"sunday": 0, "monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4, "friday": 5, "saturday": 6,
+	}
+)
 
 // ScheduleSlots spreads the schedules of new update entries over fixed slots, derived from the repository name.
 type ScheduleSlots struct {
@@ -25,12 +33,14 @@ type ScheduleSlots struct {
 // SlotWindow is a set of hours a repository can be scheduled in, and which repositories use it.
 // The last window has no rulesets and no repos-file, and holds every repository no other window matches.
 type SlotWindow struct {
-	Name      string   `yaml:"name"`
-	Hours     []int    `yaml:"hours"`
-	Timezone  string   `yaml:"timezone"`
-	Rulesets  []string `yaml:"rulesets,omitempty"`
-	ReposFile string   `yaml:"repos-file,omitempty"`
-	repos     map[string]bool
+	Name        string   `yaml:"name"`
+	Hours       []int    `yaml:"hours"`
+	Days        []string `yaml:"days,omitempty"`
+	RunsPerWeek int      `yaml:"runs-per-week,omitempty"`
+	Timezone    string   `yaml:"timezone"`
+	Rulesets    []string `yaml:"rulesets,omitempty"`
+	ReposFile   string   `yaml:"repos-file,omitempty"`
+	repos       map[string]bool
 }
 
 // UnmarshalYAML rejects unknown keys: a typo would otherwise be dropped without a word.
@@ -129,6 +139,22 @@ func (window SlotWindow) validate() error {
 		seen[hour] = true
 	}
 
+	seenDays := map[string]bool{}
+	for _, day := range window.Days {
+		if _, known := cronWeekday[day]; !known {
+			return fmt.Errorf("window %q has day %q, expected a weekday in lower case, like monday", window.Name, day)
+		}
+		if seenDays[day] {
+			return fmt.Errorf("window %q has day %q more than once", window.Name, day)
+		}
+
+		seenDays[day] = true
+	}
+
+	if runs, days := window.Runs(), len(window.Weekdays()); window.RunsPerWeek < 0 || runs > days {
+		return fmt.Errorf("window %q runs %d times a week, expected 1 to %d, the number of its days", window.Name, runs, days)
+	}
+
 	if window.Timezone == "" || window.Timezone == "Local" {
 		return fmt.Errorf("window %q needs a timezone, %q is not one", window.Name, window.Timezone)
 	}
@@ -137,6 +163,35 @@ func (window SlotWindow) validate() error {
 	}
 
 	return nil
+}
+
+// Weekdays returns the days the window runs on, Monday to Friday unless days is set.
+func (window SlotWindow) Weekdays() []string {
+	if len(window.Days) == 0 {
+		return defaultDays
+	}
+
+	return window.Days
+}
+
+// Runs returns how many times a week a repository in the window runs, twice unless runs-per-week is set.
+func (window SlotWindow) Runs() int {
+	if window.RunsPerWeek == 0 {
+		return defaultRunsPerWeek
+	}
+
+	return window.RunsPerWeek
+}
+
+func (window SlotWindow) cronWeekdays() []int {
+	var weekdays []int
+	for _, day := range window.Weekdays() {
+		weekdays = append(weekdays, cronWeekday[day])
+	}
+
+	slices.Sort(weekdays)
+
+	return weekdays
 }
 
 func (window SlotWindow) matchesRepos() bool {
@@ -198,8 +253,10 @@ func (slots *ScheduleSlots) WindowFor(repo string, rulesets []string) SlotWindow
 
 // Schedule returns the cron schedule of a repository in this window.
 func (window SlotWindow) Schedule(salt string, repo string) Schedule {
-	slot := SlotFor(salt, repo, weekdays*len(window.Hours))
-	return Schedule{Interval: "cron", Cronjob: slotCronjob(slot, window.Hours), Timezone: window.Timezone}
+	weekdays := window.cronWeekdays()
+	slot := SlotFor(salt, repo, len(weekdays)*len(window.Hours))
+
+	return Schedule{Interval: "cron", Cronjob: slotCronjob(slot, window.Hours, weekdays, window.Runs()), Timezone: window.Timezone}
 }
 
 // SlotFor maps a repository name to one of slotCount slots, using FNV-1a over "salt:repo" with the name in lower case.
@@ -210,15 +267,24 @@ func SlotFor(salt string, repo string, slotCount int) int {
 	return int(hash.Sum32() % uint32(slotCount))
 }
 
-// slotCronjob runs on the slot's weekday and three weekdays later, so every weekday is part of exactly two pairs.
-func slotCronjob(slot int, hours []int) string {
+// slotCronjob spreads the runs over the weekdays as evenly as they divide. As every weekday starts the same number of
+// slots, every weekday also runs in the same number of them.
+func slotCronjob(slot int, hours []int, weekdays []int, runs int) string {
 	hour := hours[slot%len(hours)]
 	first := slot / len(hours)
 
-	second := (first + 3) % weekdays
-	if second < first {
-		first, second = second, first
+	var runDays []int
+	for run := range runs {
+		offset := (run*len(weekdays) + runs - 1) / runs
+		runDays = append(runDays, weekdays[(first+offset)%len(weekdays)])
 	}
 
-	return fmt.Sprintf("0 %d * * %d,%d", hour, first+1, second+1)
+	slices.Sort(runDays)
+
+	var fields []string
+	for _, day := range runDays {
+		fields = append(fields, strconv.Itoa(day))
+	}
+
+	return fmt.Sprintf("0 %d * * %s", hour, strings.Join(fields, ","))
 }
