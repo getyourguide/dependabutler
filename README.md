@@ -32,35 +32,42 @@ schedule:
   timezone: Europe/Berlin
 ```
 
-Every repository runs twice a week, at the same hour, on a weekday and on the weekday three weekdays later (Monday and
-Thursday, Tuesday and Friday, Wednesday and Monday, Thursday and Tuesday, Friday and Wednesday). Each weekday is part of
-exactly two pairs, so every weekday gets about the same number of repositories.
+A repository runs `runs-per-week` times a week (2 by default) at the same hour, on days from `days` (Monday to Friday
+by default), spread over them as evenly as they divide. With the defaults, the pairs are Monday and Thursday, Tuesday
+and Friday, Wednesday and Monday, Thursday and Tuesday, Friday and Wednesday. Every day is used equally often, so every
+day gets about the same number of repositories.
 
 ```yaml
 schedule-slots:
   salt: "01J9Z3K4M5N6P7Q8R9S0T1V2W3"
   windows:
-    - name: office-hours
+    - name: daytime
       hours: [10, 11, 13, 14, 15]
       timezone: Europe/Berlin
-      rulesets: [audited]
-      repos-file: office-hours-repos.txt
-    - name: early
+      rulesets: [critical-services]
+      repos-file: daytime-repos.txt
+    - name: night
       hours: [2, 3, 4, 5, 6, 7, 8]
+      days: [monday, tuesday, wednesday, thursday, friday]  # the default
+      runs-per-week: 2                                      # the default
       timezone: Europe/Berlin
 ```
 
-- A repository uses the first window that selects it: an active ruleset in `rulesets` applies to it (organization
-  rulesets included), or `repos-file` lists it. The last window has neither and holds every other repository.
+- A repository uses the first window that selects it: an active ruleset in `rulesets` applies to it, or `repos-file`
+  lists it. The last window has neither and holds every other repository.
+- Use `rulesets` to reuse a grouping the organization already has: a new repository is picked up as soon as the ruleset
+  applies to it. Rulesets of the repository itself count too, so a repository admin can put their repository in a
+  window by creating an active ruleset with that name. Use `repos-file` for a list kept by hand.
 - `repos-file` is relative to the configuration file and lists one repository name per line. Blank lines are skipped.
 - Rulesets are read with one API call per repository, only when a window uses `rulesets`. If they cannot be read, the
   repository is skipped and counted as failed, rather than placed in the wrong window. In local mode rulesets are not
   read, and the repository name is `repo`, or the name of `dir` if `repo` is not set.
-- The slot is `FNV-1a 32(salt + ":" + repo) mod (5 × number of hours)` of the window, with `repo` in lower case: the
-  weekday pair is the result divided by the number of hours, the hour is the remainder. Repository names in
-  `repos-file` also match regardless of case. Adding or removing a repository does not move any other
-  one. Hashing does not spread repositories perfectly evenly: to reduce the busiest slot, try many salts against the
-  real repository names once, and keep the best. Changing the salt moves every repository.
+- Each repository gets a fixed slot, a day and an hour of its window, based on its name and `salt`. Adding or removing
+  repositories does not move the others; changing the salt reshuffles all of them. Names match regardless of case, in
+  `repos-file` too. The spread is not perfectly even: to reduce the busiest slot, try a few salts against the real
+  repository names once, and keep the best.
+- `days` are weekday names in lower case. `runs-per-week` is at most the number of days; 0 or unset means 2.
+- Unknown keys under `schedule-slots` are rejected, so a typo cannot quietly put a repository in another window.
 - Only new update entries get a slot. A schedule set in `update-overrides` is ignored for them, with a warning.
   Existing entries keep their schedule.
 

@@ -145,7 +145,8 @@ Initial version.
 
 ## v0.11.0
 
-- Added `schedule-slots`: new update entries get a twice-weekly `cron` schedule derived from the repository name, in
-  one of several windows of hours. A window selects repositories by ruleset or by a file listing them. Off unless the
+- Added `schedule-slots`: new update entries get a `cron` schedule derived from the repository name, in one of several
+  windows of hours. A window selects repositories by ruleset or by a file listing them, and sets the days and the runs
+  per week (twice a week, Monday to Friday, by default). Unknown keys in the block are rejected. Off unless the
   configuration file has the block. See "Schedule slots" in the README.
 - `-repo` sets the repository name used for schedule slots in local mode.

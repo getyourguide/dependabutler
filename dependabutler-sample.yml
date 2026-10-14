@@ -90,21 +90,24 @@ pull-request-parameters:
     - dependabutler
 
 #
-# schedule slots: give every new update entry its own twice-weekly cron slot instead of the default schedule
+# schedule slots: give every new update entry its own cron slot instead of the default schedule
 #
 #   - a repo uses the first window whose rulesets apply to it or whose repos-file lists it; the last window takes the rest
+#   - days and runs-per-week are optional: twice a week, Monday to Friday, by default
 #   - see README.md for how slots are computed
 #
 # schedule-slots:
 #   salt: "01J9Z3K4M5N6P7Q8R9S0T1V2W3"
 #   windows:
-#     - name: office-hours
+#     - name: daytime
 #       hours: [10, 11, 13, 14, 15]
 #       timezone: Europe/Berlin
-#       rulesets: [audited]
-#       repos-file: office-hours-repos.txt
-#     - name: early
+#       rulesets: [critical-services]
+#       repos-file: daytime-repos.txt
+#     - name: night
 #       hours: [2, 3, 4, 5, 6, 7, 8]
+#       days: [monday, tuesday, wednesday, thursday, friday]
+#       runs-per-week: 2
 #       timezone: Europe/Berlin
 
 #
