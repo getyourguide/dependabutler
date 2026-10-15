@@ -573,7 +573,7 @@ func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, too
 	}
 	if len(changeInfo.NewRegistries) > 0 || len(changeInfo.NewUpdates) > 0 || len(changeInfo.FixedUpdates) > 0 || len(changeInfo.RemovedUpdates) > 0 || len(changeInfo.RemovedRegistries) > 0 || len(changeInfo.EnforcedUpdates) > 0 {
 		// at least one item in the update block is needed
-		return dependabotConfig.ToYaml(), changeInfo, nil
+		return dependabotConfig.ToYamlKeepingQuotes(currentConfig), changeInfo, nil
 	}
 	log.Printf("INFO  No update needed for repo %s.", repo)
 	return nil, config.ChangeInfo{}, nil

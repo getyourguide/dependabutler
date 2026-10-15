@@ -1042,6 +1042,41 @@ updates:
 	}
 }
 
+func TestToYamlUsesDoubleQuotes(t *testing.T) {
+	input := `version: 2
+registries:
+  npm-reg:
+    type: npm-registry
+    url: https://npm.example.com
+    token: "${{secrets.NPM_TOKEN}}"
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+      time: "07:00"
+    registries:
+      - npm-reg
+    ignore:
+      - dependency-name: "@anthropic-ai/sdk"
+      - dependency-name: "on"
+      - dependency-name: 'a: "b"'
+    cooldown:
+      default-days: 3
+      exclude:
+        - "*getyourguide*"
+`
+
+	parsedConfig, err := ParseDependabotConfig([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseDependabotConfig() failed: %v", err)
+	}
+
+	if got := string(parsedConfig.ToYaml()); got != input {
+		t.Errorf("ToYaml() did not keep double quotes, which formatters like Prettier expect.\nExpected:\n%v\nGot:\n%v", input, got)
+	}
+}
+
 func TestToYamlKeepsUnknownKeys(t *testing.T) {
 	input := `version: 2
 registries:
@@ -1070,10 +1105,10 @@ updates:
     groups:
       all:
         patterns:
-          - '*'
+          - "*"
         group-by: dependency-name
     pull-request-branch-name:
-      separator: '-'
+      separator: "-"
       unknown-branch-name-key: x
     cooldown:
       default-days: 3
@@ -1082,7 +1117,7 @@ updates:
       - vendor/**
     multi-ecosystem-group: infra
     patterns:
-      - '*'
+      - "*"
 multi-ecosystem-groups:
   infra:
     schedule:
