@@ -6,11 +6,16 @@ import (
 
 func TestToYamlKeepingQuotesKeepsTheQuotesOfWrittenValues(t *testing.T) {
 	original := `version: 2
+registries:
+  npm-reg:
+    type: npm-registry
+    url: https://npm.example.com
+    token: "${{secrets.NPM_TOKEN}}"
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: daily
+      interval: 'daily'
       time: '07:00'
     ignore:
       - dependency-name: '@anthropic-ai/sdk'
@@ -20,11 +25,16 @@ updates:
         - "*getyourguide*"
 `
 	expected := `version: 2
+registries:
+  npm-reg:
+    type: npm-registry
+    url: https://npm.example.com
+    token: "${{secrets.NPM_TOKEN}}"
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: daily
+      interval: 'daily'
       time: '07:00'
     ignore:
       - dependency-name: '@anthropic-ai/sdk'

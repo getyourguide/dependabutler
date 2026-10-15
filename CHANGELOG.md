@@ -176,6 +176,6 @@ Initial version.
 
 ## v0.11.1
 
-- Strings that need quotes keep the quotes they have in `dependabot.yml`, and new ones get double quotes, the style
-  formatters like Prettier use. Before, all of them were rewritten with single quotes, so repositories that check the
-  formatting of the file failed their checks on every pull request from dependabutler.
+- Strings keep the quotes they have in `dependabot.yml`, and new strings that need quotes get double quotes, the style
+  formatters like Prettier use. Before, quoted strings were rewritten with single quotes or without quotes, so
+  repositories that check the formatting of the file failed their checks on every pull request from dependabutler.
