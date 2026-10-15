@@ -173,3 +173,9 @@ Initial version.
 - A directory that cannot be checked, for example because of a GitHub server error, is no longer treated as missing:
   the repository is skipped and counted as failed. Before, the entry was removed and added back on the next run without
   its settings.
+
+## v0.11.1
+
+- Strings that need quotes keep the quotes they have in `dependabot.yml`, and new ones get double quotes, the style
+  formatters like Prettier use. Before, all of them were rewritten with single quotes, so repositories that check the
+  formatting of the file failed their checks on every pull request from dependabutler.

@@ -15,7 +15,7 @@ updates:
     groups:
       minor-patch:
         patterns:
-          - '*'
+          - "*"
         update-types:
           - minor
           - patch
@@ -80,7 +80,7 @@ func TestToYamlQuotesGroupNamesThatLookLikeOtherValues(t *testing.T) {
 
 	got := string(dependabotConfig.ToYaml())
 
-	if !strings.Contains(got, "'yes':") || !strings.Contains(got, `"1":`) {
+	if !strings.Contains(got, `"yes":`) || !strings.Contains(got, `"1":`) {
 		t.Errorf("ToYaml() did not quote the group names:\n%v", got)
 	}
 }

@@ -661,6 +661,12 @@ func ScanLocalDirectory(baseDirectory string, directory string, manifests map[st
 
 // ToYaml returns a YAML representation of a dependabot config.
 func (config *DependabotConfig) ToYaml() []byte {
+	return config.ToYamlKeepingQuotes(nil)
+}
+
+// ToYamlKeepingQuotes returns the config as YAML. Values quoted in original keep their quotes, so a rewrite does not
+// fight the style a repository's formatter chose; other values that need quotes get double quotes.
+func (config *DependabotConfig) ToYamlKeepingQuotes(original []byte) []byte {
 	// sort entries in update list, to avoid commits due to changed order only
 	// nothing to be done for registries, as yaml marshals maps sorted by key
 	if len(config.Updates) > 1 {
@@ -682,10 +688,7 @@ func (config *DependabotConfig) ToYaml() []byte {
 	}
 
 	buf := new(bytes.Buffer)
-	encoder := yaml.NewEncoder(buf)
-	encoder.SetIndent(2)
-	err := encoder.Encode(config)
-	if err != nil {
+	if err := encodeKeepingQuotes(buf, config, writtenQuoteStyles(original)); err != nil {
 		log.Printf("ERROR Could not encode yml: %v", err)
 		return nil
 	}
