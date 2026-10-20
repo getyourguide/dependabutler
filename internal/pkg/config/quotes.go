@@ -53,13 +53,15 @@ func encodeKeepingQuotes(w io.Writer, value any, written quoteStyles) error {
 
 // apply sets the quote style of every value that the YAML library quoted, and quotes the other strings that were quoted
 // in the file. The library single-quotes strings that YAML 1.1 would read as another type, like 07:00 or on, whatever
-// quote style is preferred. Secret expressions are left out: ToYaml quotes them itself.
+// quote style is preferred. Secret expressions are always double-quoted, since an unquoted { starts a YAML mapping.
 func (styles quoteStyles) apply(node *yaml.Node) {
 	switch {
 	case node.Kind != yaml.ScalarNode:
+	case strings.Contains(node.Value, "${{"):
+		node.Style = yaml.DoubleQuotedStyle
 	case node.Style&quotedStyles != 0:
 		node.Style = styles.styleFor(node.Value)
-	case node.Tag == "!!str" && !strings.Contains(node.Value, "${{"):
+	case node.Tag == "!!str":
 		if style, ok := styles[node.Value]; ok {
 			node.Style = style
 		}

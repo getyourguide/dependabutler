@@ -709,10 +709,6 @@ func (config *DependabotConfig) ToYamlKeepingQuotes(original []byte) []byte {
 		return match
 	})
 
-	// Quote GitHub secret expressions like ${{secrets.MY_SECRET}}
-	secretsRe := regexp.MustCompile(`(\$\{\{[^}]+\}\})`)
-	rawString = secretsRe.ReplaceAllString(rawString, `"$1"`)
-
 	return []byte(rawString)
 }
 
