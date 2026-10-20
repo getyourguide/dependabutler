@@ -107,6 +107,32 @@ updates:
 `,
 		},
 		{
+			name: "comment after an inline list",
+			input: `version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    ignore:
+      - dependency-name: tsx
+        update-types: ["version-update:semver-major"] # breaks build
+      - dependency-name: node
+`,
+			expected: `version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    ignore:
+      - dependency-name: tsx
+        update-types: # breaks build
+          - "version-update:semver-major"
+      - dependency-name: node
+`,
+		},
+		{
 			name: "rules for the same dependency",
 			input: `version: 2
 updates:

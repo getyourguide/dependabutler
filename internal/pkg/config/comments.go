@@ -47,6 +47,8 @@ func readComments(data []byte) writtenComments {
 		return writtenComments{}
 	}
 
+	moveInlineCollectionComments(&node)
+
 	comments := writtenComments{byPath: map[string][]comment{}, shared: sharedPaths(&node)}
 	walkPaths(&node, "", func(path string, n *yaml.Node) {
 		if n.HeadComment != "" || n.LineComment != "" || n.FootComment != "" {
@@ -55,6 +57,24 @@ func readComments(data []byte) writtenComments {
 	})
 
 	return comments
+}
+
+// moveInlineCollectionComments moves the comment after an inline list or mapping, like `versions: [1.x] # broken`, to
+// its key. The rewrite writes the collection as a block, which would put the comment on the next line, often another
+// item of the list.
+func moveInlineCollectionComments(node *yaml.Node) {
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			key, value := node.Content[i], node.Content[i+1]
+			if value.Kind != yaml.ScalarNode && value.LineComment != "" && key.LineComment == "" {
+				key.LineComment, value.LineComment = value.LineComment, ""
+			}
+		}
+	}
+
+	for _, child := range node.Content {
+		moveInlineCollectionComments(child)
+	}
 }
 
 // apply puts every comment on the node with its path. A comment whose node is gone, or whose path is shared by several
