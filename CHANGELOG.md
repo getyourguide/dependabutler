@@ -184,4 +184,5 @@ Initial version.
 
 - Comments in `dependabot.yml` are kept when the file is rewritten, next to the key or list item they belong to, also
   when update entries are sorted. Before, every comment was removed. A comment whose key or item is removed, or whose
-  update entry gets other directories, is dropped with a warning in the log.
+  update entry gets other directories, is dropped with a warning in the log. So are the comments of identical items in
+  one list, which cannot be told apart.

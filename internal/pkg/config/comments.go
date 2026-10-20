@@ -10,8 +10,12 @@ import (
 )
 
 // identityKeys are the keys that tell the items of a list apart. Items are matched by them instead of by position,
-// because a rewrite sorts the update entries and adds or removes items.
-var identityKeys = []string{"package-ecosystem", "directory", "directories", "target-branch", "dependency-name"}
+// because a rewrite sorts the update entries and adds or removes items. versions, update-types and dependency-type tell
+// apart the rules of an ignore or allow list for the same dependency.
+var identityKeys = []string{
+	"package-ecosystem", "directory", "directories", "target-branch",
+	"dependency-name", "dependency-type", "versions", "update-types",
+}
 
 type comment struct {
 	head, line, foot string
@@ -28,39 +32,49 @@ func (c comment) String() string {
 	return strings.Join(parts, "\n")
 }
 
-// writtenComments maps the path of every commented node of a dependabot.yml to its comments.
-type writtenComments map[string]comment
+// writtenComments holds the comments of a dependabot.yml by the path of their node.
+type writtenComments struct {
+	byPath map[string][]comment
+
+	// shared are the paths of several nodes, like identical items of a list, whose comments cannot be matched
+	shared map[string]bool
+}
 
 // readComments reads the comments of a dependabot.yml. Invalid YAML has none.
 func readComments(data []byte) writtenComments {
 	var node yaml.Node
 	if err := yaml.Unmarshal(data, &node); err != nil {
-		return nil
+		return writtenComments{}
 	}
 
-	comments := writtenComments{}
+	comments := writtenComments{byPath: map[string][]comment{}, shared: sharedPaths(&node)}
 	walkPaths(&node, "", func(path string, n *yaml.Node) {
 		if n.HeadComment != "" || n.LineComment != "" || n.FootComment != "" {
-			comments[path] = comment{n.HeadComment, n.LineComment, n.FootComment}
+			comments.byPath[path] = append(comments.byPath[path], comment{n.HeadComment, n.LineComment, n.FootComment})
 		}
 	})
 
 	return comments
 }
 
-// apply puts every comment on the node with its path. A comment whose node is gone is dropped with a warning, so the
-// loss shows in the log instead of only in the pull request.
+// apply puts every comment on the node with its path. A comment whose node is gone, or whose path is shared by several
+// nodes in the file or the rewrite, is dropped with a warning, so the loss shows in the log instead of only in the pull
+// request.
 func (comments writtenComments) apply(document *yaml.Node) {
+	shared := sharedPaths(document)
 	placed := map[string]bool{}
 	walkPaths(document, "", func(path string, n *yaml.Node) {
-		if c, ok := comments[path]; ok {
-			n.HeadComment, n.LineComment, n.FootComment = c.head, c.line, c.foot
+		if comments.shared[path] || shared[path] {
+			return
+		}
+		if c, ok := comments.byPath[path]; ok {
+			n.HeadComment, n.LineComment, n.FootComment = c[0].head, c[0].line, c[0].foot
 			placed[path] = true
 		}
 	})
 
 	dropped := []string{}
-	for path := range comments {
+	for path := range comments.byPath {
 		if !placed[path] {
 			dropped = append(dropped, path)
 		}
@@ -68,8 +82,21 @@ func (comments writtenComments) apply(document *yaml.Node) {
 
 	slices.Sort(dropped)
 	for _, path := range dropped {
-		log.Printf("WARN  Dropped the comment %q of %v, which is no longer in dependabot.yml.", comments[path], path)
+		for _, c := range comments.byPath[path] {
+			log.Printf("WARN  Dropped the comment %q of %v, which is no longer in dependabot.yml.", c, path)
+		}
 	}
+}
+
+func sharedPaths(node *yaml.Node) map[string]bool {
+	seen := map[string]bool{}
+	shared := map[string]bool{}
+	walkPaths(node, "", func(path string, _ *yaml.Node) {
+		shared[path] = seen[path]
+		seen[path] = true
+	})
+
+	return shared
 }
 
 // walkPaths calls visit with every node and its path, like $.updates[npm /].ignore[tsx] for the item of an ignore

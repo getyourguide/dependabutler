@@ -106,6 +106,24 @@ updates:
       interval: daily # nightly
 `,
 		},
+		{
+			name: "rules for the same dependency",
+			input: `version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
+      # 22.3 breaks the build
+      - dependency-name: "@types/node"
+        versions:
+          - 22.3.x
+`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -166,40 +184,80 @@ updates:
 }
 
 func TestToYamlKeepingQuotesWarnsAboutDroppedComments(t *testing.T) {
-	original := `version: 2
+	tests := []struct {
+		name    string
+		ignore  string
+		change  func(ignore []Ignore) []Ignore
+		warning string
+	}{
+		{
+			name: "removed item",
+			ignore: `      # waiting for a fix
+      - dependency-name: tsx
+`,
+			change:  func([]Ignore) []Ignore { return nil },
+			warning: `WARN  Dropped the comment "# waiting for a fix" of $.updates[npm /].ignore[tsx]`,
+		},
+		{
+			name: "changed item",
+			ignore: `      # waiting for a fix
+      - dependency-name: tsx
+        versions:
+          - 4.23.x
+`,
+			change: func(ignore []Ignore) []Ignore {
+				ignore[0].Versions = []string{"4.24.x"}
+				return ignore
+			},
+			warning: `WARN  Dropped the comment "# waiting for a fix" of $.updates[npm /].ignore[tsx 4.23.x]`,
+		},
+		{
+			name: "item with an identical twin",
+			ignore: `      - dependency-name: tsx
+      # waiting for a fix
+      - dependency-name: tsx
+`,
+			change:  func(ignore []Ignore) []Ignore { return ignore },
+			warning: `WARN  Dropped the comment "# waiting for a fix" of $.updates[npm /].ignore[tsx]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := `version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: daily
     ignore:
-      # waiting for a fix
-      - dependency-name: tsx
-`
+` + tt.ignore
 
-	parsedConfig, err := ParseDependabotConfig([]byte(original))
-	if err != nil {
-		t.Fatalf("ParseDependabotConfig() failed: %v", err)
-	}
+			parsedConfig, err := ParseDependabotConfig([]byte(original))
+			if err != nil {
+				t.Fatalf("ParseDependabotConfig() failed: %v", err)
+			}
 
-	parsedConfig.Updates[0].Ignore = nil
+			parsedConfig.Updates[0].Ignore = tt.change(parsedConfig.Updates[0].Ignore)
 
-	var logs bytes.Buffer
-	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+			var logs bytes.Buffer
+			log.SetOutput(&logs)
+			t.Cleanup(func() { log.SetOutput(os.Stderr) })
 
-	got := string(parsedConfig.ToYamlKeepingQuotes([]byte(original)))
+			got := string(parsedConfig.ToYamlKeepingQuotes([]byte(original)))
 
-	if strings.Contains(got, "waiting for a fix") {
-		t.Errorf("ToYamlKeepingQuotes() kept the comment of a removed item:\n%v", got)
-	}
-	if !strings.Contains(logs.String(), `WARN  Dropped the comment "# waiting for a fix" of $.updates[npm /].ignore[tsx]`) {
-		t.Errorf("ToYamlKeepingQuotes() did not warn about the dropped comment, logged:\n%v", logs.String())
+			if strings.Contains(got, "waiting for a fix") {
+				t.Errorf("ToYamlKeepingQuotes() kept a comment it cannot place:\n%v", got)
+			}
+			if !strings.Contains(logs.String(), tt.warning) {
+				t.Errorf("ToYamlKeepingQuotes() did not warn about the dropped comment, logged:\n%v", logs.String())
+			}
+		})
 	}
 }
 
 func TestReadCommentsOfInvalidYaml(t *testing.T) {
-	if comments := readComments([]byte("updates: [ # comment")); len(comments) != 0 {
+	if comments := readComments([]byte("updates: [ # comment")); len(comments.byPath) != 0 {
 		t.Errorf("readComments() = %v, expected no comments for invalid YAML", comments)
 	}
 }

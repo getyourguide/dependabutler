@@ -26,7 +26,8 @@ Dependabot puts a dependency in the first group it matches. Strings keep the quo
 strings that need quotes get double quotes, or single quotes when they contain more double quotes, as Prettier does.
 Comments stay with the key or list item they are written next to, also when the entry moves. Update entries are told
 apart by ecosystem, directories and target branch, so the comments of an entry whose directories change, for example by
-directory grouping, are dropped, like those of a removed key or item. Each dropped comment is logged as a warning.
+directory grouping, are dropped, like those of a removed key or item and of identical items in one list. Each dropped
+comment is logged as a warning.
 Blank lines are not kept.
 
 ### Groups
