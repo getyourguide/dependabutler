@@ -179,3 +179,10 @@ Initial version.
 - Strings keep the quotes they have in `dependabot.yml`, and new strings that need quotes get double quotes, the style
   formatters like Prettier use. Before, quoted strings were rewritten with single quotes or without quotes, so
   repositories that check the formatting of the file failed their checks on every pull request from dependabutler.
+
+## v0.11.2
+
+- Comments in `dependabot.yml` are kept when the file is rewritten, next to the key or list item they belong to, also
+  when update entries are sorted. Before, every comment was removed. A comment whose key or item is removed, or whose
+  update entry gets other directories, is dropped with a warning in the log. So are the comments of identical items in
+  one list, which cannot be told apart.

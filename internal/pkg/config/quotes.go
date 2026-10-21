@@ -36,8 +36,8 @@ func (styles quoteStyles) collect(node *yaml.Node) {
 
 // encodeKeepingQuotes writes YAML in which every value that needs quotes keeps the quotes it had in written, and
 // otherwise gets the quotes Prettier would give it. Quote changes would fail the checks of repositories that format
-// their dependabot.yml.
-func encodeKeepingQuotes(w io.Writer, value any, written quoteStyles) error {
+// their dependabot.yml. Comments are put back where they were.
+func encodeKeepingQuotes(w io.Writer, value any, written quoteStyles, comments writtenComments) error {
 	var node yaml.Node
 	if err := node.Encode(value); err != nil {
 		return err
@@ -45,21 +45,27 @@ func encodeKeepingQuotes(w io.Writer, value any, written quoteStyles) error {
 
 	written.apply(&node)
 
+	// a comment at the top of the file belongs to the document, which Encode does not create
+	document := &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{&node}}
+	comments.apply(document)
+
 	encoder := yaml.NewEncoder(w)
 	encoder.SetIndent(2)
 
-	return encoder.Encode(&node)
+	return encoder.Encode(document)
 }
 
 // apply sets the quote style of every value that the YAML library quoted, and quotes the other strings that were quoted
 // in the file. The library single-quotes strings that YAML 1.1 would read as another type, like 07:00 or on, whatever
-// quote style is preferred. Secret expressions are left out: ToYaml quotes them itself.
+// quote style is preferred. Secret expressions are always double-quoted, since an unquoted { starts a YAML mapping.
 func (styles quoteStyles) apply(node *yaml.Node) {
 	switch {
 	case node.Kind != yaml.ScalarNode:
+	case strings.Contains(node.Value, "${{"):
+		node.Style = yaml.DoubleQuotedStyle
 	case node.Style&quotedStyles != 0:
 		node.Style = styles.styleFor(node.Value)
-	case node.Tag == "!!str" && !strings.Contains(node.Value, "${{"):
+	case node.Tag == "!!str":
 		if style, ok := styles[node.Value]; ok {
 			node.Style = style
 		}

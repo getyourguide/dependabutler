@@ -688,7 +688,7 @@ func (config *DependabotConfig) ToYamlKeepingQuotes(original []byte) []byte {
 	}
 
 	buf := new(bytes.Buffer)
-	if err := encodeKeepingQuotes(buf, config, writtenQuoteStyles(original)); err != nil {
+	if err := encodeKeepingQuotes(buf, config, writtenQuoteStyles(original), readComments(original)); err != nil {
 		log.Printf("ERROR Could not encode yml: %v", err)
 		return nil
 	}
@@ -708,10 +708,6 @@ func (config *DependabotConfig) ToYamlKeepingQuotes(original []byte) []byte {
 		}
 		return match
 	})
-
-	// Quote GitHub secret expressions like ${{secrets.MY_SECRET}}
-	secretsRe := regexp.MustCompile(`(\$\{\{[^}]+\}\})`)
-	rawString = secretsRe.ReplaceAllString(rawString, `"$1"`)
 
 	return []byte(rawString)
 }
