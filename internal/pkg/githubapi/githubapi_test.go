@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -81,9 +82,9 @@ func TestCheckDirectoryExistsTellsMissingFromFailed(t *testing.T) {
 	}
 }
 
-// stalePRServer serves an open dependabutler PR number 7, whose commits are authored by the given emails. With no
-// emails, the repo has no open dependabutler PR. It records the requests that change the PR.
-func stalePRServer(t *testing.T, emails []string, changes *[]string) *Client {
+// stalePRServer serves an open dependabutler PR number 7, which reports total commits and lists those authored by the
+// given emails. With no emails, the repo has no open dependabutler PR. It records the requests that change the PR.
+func stalePRServer(t *testing.T, emails []string, total int, changes *[]string) *Client {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -95,7 +96,7 @@ func stalePRServer(t *testing.T, emails []string, changes *[]string) *Client {
 			}
 			_, _ = w.Write([]byte(`[{"number": 7, "pull_request": {"url": "x"}}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7":
-			_, _ = w.Write([]byte(`{"number": 7, "html_url": "https://github.com/acme/app/pull/7"}`))
+			_, _ = w.Write([]byte(`{"number": 7, "html_url": "https://github.com/acme/app/pull/7", "commits": ` + strconv.Itoa(total) + `}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7/commits":
 			commits := make([]string, 0, len(emails))
 			for _, email := range emails {
@@ -128,15 +129,17 @@ func TestGetStalePullRequest(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		emails []string
+		total  int
 		stale  bool
 	}{
-		{"no open PR", nil, false},
-		{"only dependabutler commits", []string{"dependabutler@example.com", "Dependabutler@Example.com"}, true},
-		{"commit by someone else", []string{"dependabutler@example.com", "dev@example.com"}, false},
+		{"no open PR", nil, 0, false},
+		{"only dependabutler commits", []string{"dependabutler@example.com", "Dependabutler@Example.com"}, 2, true},
+		{"commit by someone else", []string{"dependabutler@example.com", "dev@example.com"}, 2, false},
+		{"more commits than listed", []string{"dependabutler@example.com"}, 251, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var changes []string
-			client := stalePRServer(t, tt.emails, &changes)
+			client := stalePRServer(t, tt.emails, tt.total, &changes)
 
 			pr, err := client.GetStalePullRequest("acme", "app", "dependabutler@example.com")
 
@@ -152,7 +155,7 @@ func TestGetStalePullRequest(t *testing.T) {
 
 func TestCloseStalePullRequestCommentsThenCloses(t *testing.T) {
 	var changes []string
-	client := stalePRServer(t, []string{"dependabutler@example.com"}, &changes)
+	client := stalePRServer(t, []string{"dependabutler@example.com"}, 1, &changes)
 
 	err := client.CloseStalePullRequest("acme", "app", &github.PullRequest{Number: github.Ptr(7)}, 0)
 

@@ -379,6 +379,10 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 	}
 
 	if yamlContent == nil && toolConfig.PullRequestParameters.CloseStalePRs {
+		if loaded.treeTruncated {
+			log.Printf("WARN  Not closing a stale PR on repo %v: the file tree is truncated, so manifests may be missed.", repo)
+			return true
+		}
 		return closeStalePullRequest(gitHubClient, execute, org, repo, toolConfig.PullRequestParameters)
 	}
 
