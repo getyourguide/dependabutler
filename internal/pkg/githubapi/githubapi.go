@@ -200,7 +200,8 @@ const stalePRComment = "dependabutler closes this PR: `.github/dependabot.yml` o
 	"so the change in this PR is no longer needed. The branch is kept."
 
 // GetStalePullRequest returns the open PR of dependabutler, if every commit on it is authored by authorEmail. A PR with
-// commits by anyone else is left alone, so that their changes are not thrown away.
+// commits by anyone else is left alone, so that their changes are not thrown away. So is a PR whose commits could not
+// all be checked, as GitHub lists at most 250 commits of a PR.
 func (client *Client) GetStalePullRequest(org string, repo string, authorEmail string) (*github.PullRequest, error) {
 	pr, err := client.getExistingPr(org, repo)
 	if err != nil || pr == nil {
@@ -209,6 +210,7 @@ func (client *Client) GetStalePullRequest(org string, repo string, authorEmail s
 
 	ctx := context.Background()
 	opts := &github.ListOptions{PerPage: 100}
+	checked := 0
 	for {
 		commits, resp, err := client.gh.PullRequests.ListCommits(ctx, org, repo, pr.GetNumber(), opts)
 		client.observe(resp, err)
@@ -221,11 +223,18 @@ func (client *Client) GetStalePullRequest(org string, repo string, authorEmail s
 				return nil, nil
 			}
 		}
+		checked += len(commits)
 		if resp.NextPage == 0 {
-			return pr, nil
+			break
 		}
 		opts.Page = resp.NextPage
 	}
+
+	if checked != pr.GetCommits() {
+		log.Printf("INFO  PR %v has %d commits, but %d could be checked, leaving it open.", pr.GetHTMLURL(), pr.GetCommits(), checked)
+		return nil, nil
+	}
+	return pr, nil
 }
 
 // CloseStalePullRequest comments on a PR that is no longer needed and closes it. The branch is kept.
