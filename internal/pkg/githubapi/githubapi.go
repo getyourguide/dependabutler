@@ -4,6 +4,7 @@ package githubapi
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"strings"
@@ -195,6 +196,9 @@ func (client *Client) CreateOrUpdatePullRequest(org string, repo string, baseBra
 	return nil
 }
 
+// branchSuffixBytes is the number of random bytes in the suffix of a branch name, with branch-name-random-suffix.
+const branchSuffixBytes = 16
+
 // stalePRComment is posted on a PR before it is closed as stale.
 const stalePRComment = "dependabutler closes this PR: `.github/dependabot.yml` on the default branch needs no update anymore, " +
 	"so the change in this PR is no longer needed. The branch is kept."
@@ -209,7 +213,7 @@ func (client *Client) GetStalePullRequest(org string, repo string, prParams conf
 		return nil, err
 	}
 
-	if !isDependabutlerBranch(pr.GetHead().GetRef(), prParams.BranchName) {
+	if !isDependabutlerBranch(pr.GetHead().GetRef(), prParams) {
 		log.Printf("INFO  PR %v is not on a %v branch, leaving it open.", pr.GetHTMLURL(), prParams.BranchName)
 		return nil, nil
 	}
@@ -243,10 +247,22 @@ func (client *Client) GetStalePullRequest(org string, repo string, prParams conf
 	return pr, nil
 }
 
-// isDependabutlerBranch tells if branch is named by branchName, with or without the random suffix of
-// branch-name-random-suffix.
-func isDependabutlerBranch(branch string, branchName string) bool {
-	return branchName != "" && (branch == branchName || strings.HasPrefix(branch, branchName+"-"))
+// isDependabutlerBranch tells if branch is a name getNewBranchName gives: branch-name itself, or with
+// branch-name-random-suffix, branch-name followed by "-" and the hex encoded random suffix.
+func isDependabutlerBranch(branch string, prParams config.PullRequestParameters) bool {
+	if prParams.BranchName == "" {
+		return false
+	}
+	if !prParams.BranchNameRandomSuffix {
+		return branch == prParams.BranchName
+	}
+
+	suffix, found := strings.CutPrefix(branch, prParams.BranchName+"-")
+	if !found || len(suffix) != hex.EncodedLen(branchSuffixBytes) {
+		return false
+	}
+	_, err := hex.DecodeString(suffix)
+	return err == nil
 }
 
 // CloseStalePullRequest comments on a PR that is no longer needed and closes it. The branch is kept.
@@ -439,7 +455,7 @@ func (client *Client) getExistingPr(org string, repo string) (*github.PullReques
 func getNewBranchName(prParams config.PullRequestParameters) (string, error) {
 	branchName := prParams.BranchName
 	if prParams.BranchNameRandomSuffix {
-		randToken, err := util.RandToken(16)
+		randToken, err := util.RandToken(branchSuffixBytes)
 		if err != nil {
 			return "", err
 		}

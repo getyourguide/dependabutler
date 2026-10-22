@@ -96,7 +96,7 @@ func stalePRServer(t *testing.T, emails []string, total int, changes *[]string) 
 			}
 			_, _ = w.Write([]byte(`[{"number": 7, "pull_request": {"url": "x"}}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7":
-			_, _ = w.Write([]byte(`{"number": 7, "html_url": "https://github.com/acme/app/pull/7", "head": {"ref": "dependabutler-update-0a1b"}, "commits": ` + strconv.Itoa(total) + `}`))
+			_, _ = w.Write([]byte(`{"number": 7, "html_url": "https://github.com/acme/app/pull/7", "head": {"ref": "dependabutler-update-0123456789abcdef0123456789abcdef"}, "commits": ` + strconv.Itoa(total) + `}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7/commits":
 			commits := make([]string, 0, len(emails))
 			for _, email := range emails {
@@ -143,7 +143,7 @@ func TestGetStalePullRequest(t *testing.T) {
 			var changes []string
 			client := stalePRServer(t, tt.emails, tt.total, &changes)
 
-			pr, err := client.GetStalePullRequest("acme", "app", config.PullRequestParameters{BranchName: tt.branch, AuthorEmail: "dependabutler@example.com"})
+			pr, err := client.GetStalePullRequest("acme", "app", config.PullRequestParameters{BranchName: tt.branch, BranchNameRandomSuffix: true, AuthorEmail: "dependabutler@example.com"})
 
 			if err != nil || (pr != nil) != tt.stale {
 				t.Errorf("GetStalePullRequest() = %v, %v, expected a stale PR: %v", pr, err, tt.stale)
@@ -159,16 +159,22 @@ func TestIsDependabutlerBranch(t *testing.T) {
 	for _, tt := range []struct {
 		branch     string
 		branchName string
+		random     bool
 		expected   bool
 	}{
-		{"dependabutler-update", "dependabutler-update", true},
-		{"dependabutler-update-0a1b", "dependabutler-update", true},
-		{"dependabutler-updates", "dependabutler-update", false},
-		{"feature", "dependabutler-update", false},
-		{"feature", "", false},
+		{"dependabutler-update", "dependabutler-update", false, true},
+		{"dependabutler-update-0123456789abcdef0123456789abcdef", "dependabutler-update", false, false},
+		{"dependabutler-update-enforcement", "dependabutler-update", false, false},
+		{"dependabutler-update-0123456789abcdef0123456789abcdef", "dependabutler-update", true, true},
+		{"dependabutler-update", "dependabutler-update", true, false},
+		{"dependabutler-update-enforcement", "dependabutler-update", true, false},
+		{"dependabutler-update-0123456789abcdef0123456789abcd", "dependabutler-update", true, false},
+		{"dependabutler-update-0123456789abcdef0123456789abcdzz", "dependabutler-update", true, false},
+		{"feature", "", false, false},
 	} {
-		if got := isDependabutlerBranch(tt.branch, tt.branchName); got != tt.expected {
-			t.Errorf("isDependabutlerBranch(%q, %q) = %v, expected %v", tt.branch, tt.branchName, got, tt.expected)
+		prParams := config.PullRequestParameters{BranchName: tt.branchName, BranchNameRandomSuffix: tt.random}
+		if got := isDependabutlerBranch(tt.branch, prParams); got != tt.expected {
+			t.Errorf("isDependabutlerBranch(%q, %q, random suffix %v) = %v, expected %v", tt.branch, tt.branchName, tt.random, got, tt.expected)
 		}
 	}
 }
