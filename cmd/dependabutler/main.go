@@ -410,7 +410,7 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 // closeStalePullRequest closes the open PR of a repo whose config needs no update: the PR holds what an earlier run
 // wanted, so merging it would undo the current config. In log-only mode, the PR is only logged.
 func closeStalePullRequest(gitHubClient *githubapi.Client, execute bool, org string, repo string, prParams config.PullRequestParameters) bool {
-	pr, err := gitHubClient.GetStalePullRequest(org, repo, prParams.AuthorEmail)
+	pr, err := gitHubClient.GetStalePullRequest(org, repo, prParams)
 	if err != nil {
 		log.Printf("ERROR Could not check for a stale PR on repo %v: %v", repo, err)
 		return false

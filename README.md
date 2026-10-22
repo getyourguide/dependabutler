@@ -184,13 +184,14 @@ pull-request-parameters:
   close-stale-prs: true
 ```
 
-- Only a pull request whose commits are all authored by `author-email` is closed. A pull request someone else pushed to
-  is left open.
+- Only a pull request on a `branch-name` branch whose commits are all authored by `author-email` is closed. A pull
+  request someone else pushed to is left open.
 - A pull request is also left open when not all of its commits can be checked (GitHub lists at most 250), or when the
   file tree of the repository is truncated by GitHub, since manifests may be missed.
 - The branch is kept, so the pull request can be reopened.
 - A repository whose `dependabot.yml` cannot be parsed is skipped, and its pull request is left open.
-- Each repository that needs no update takes one more API call, and two more when it has an open pull request.
+- Each repository that needs no update takes one more API call. An open pull request takes at least two more to check
+  it (one per 100 commits), and two more to close it.
 - In log-only mode, the pull request is only logged.
 
 ### Parameters
