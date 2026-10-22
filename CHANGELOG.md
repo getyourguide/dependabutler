@@ -194,3 +194,12 @@ Initial version.
   dependencies no longer has to be written into every repository. The dependency graph is read only when a group has
   `only-if-used`, with one API call per repository; when it cannot be read, the repository is skipped and counted as
   failed.
+
+## v0.13.0
+
+- Added `close-stale-prs` to `pull-request-parameters`: when a repository needs no update, its open dependabutler pull
+  request is closed with a comment, since merging it would put back what an earlier run wanted. Pull requests with
+  commits by other authors are left open, and the branch is kept. Off unless set. See "Closing stale pull requests" in
+  the README.
+- A `dependabot.yml` that cannot be parsed is told apart from one that needs no update. The repository is still skipped
+  without counting as a failure.

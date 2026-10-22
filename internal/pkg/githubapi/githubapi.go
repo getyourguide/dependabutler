@@ -195,6 +195,63 @@ func (client *Client) CreateOrUpdatePullRequest(org string, repo string, baseBra
 	return nil
 }
 
+// stalePRComment is posted on a PR before it is closed as stale.
+const stalePRComment = "dependabutler closes this PR: `.github/dependabot.yml` on the default branch needs no update anymore, " +
+	"so the change in this PR is no longer needed. The branch is kept."
+
+// GetStalePullRequest returns the open PR of dependabutler, if every commit on it is authored by authorEmail. A PR with
+// commits by anyone else is left alone, so that their changes are not thrown away.
+func (client *Client) GetStalePullRequest(org string, repo string, authorEmail string) (*github.PullRequest, error) {
+	pr, err := client.getExistingPr(org, repo)
+	if err != nil || pr == nil {
+		return nil, err
+	}
+
+	ctx := context.Background()
+	opts := &github.ListOptions{PerPage: 100}
+	for {
+		commits, resp, err := client.gh.PullRequests.ListCommits(ctx, org, repo, pr.GetNumber(), opts)
+		client.observe(resp, err)
+		if err != nil {
+			return nil, err
+		}
+		for _, commit := range commits {
+			if !strings.EqualFold(commit.GetCommit().GetAuthor().GetEmail(), authorEmail) {
+				log.Printf("INFO  PR %v has commits by other authors, leaving it open.", pr.GetHTMLURL())
+				return nil, nil
+			}
+		}
+		if resp.NextPage == 0 {
+			return pr, nil
+		}
+		opts.Page = resp.NextPage
+	}
+}
+
+// CloseStalePullRequest comments on a PR that is no longer needed and closes it. The branch is kept.
+func (client *Client) CloseStalePullRequest(org string, repo string, pr *github.PullRequest, sleepSeconds int) error {
+	ctx := context.Background()
+	comment := &github.IssueComment{Body: github.Ptr(stalePRComment)}
+	_, resp, err := client.gh.Issues.CreateComment(ctx, org, repo, pr.GetNumber(), comment)
+	client.observe(resp, err)
+	if err != nil {
+		return err
+	}
+
+	_, resp, err = client.gh.PullRequests.Edit(ctx, org, repo, pr.GetNumber(), &github.PullRequest{State: github.Ptr("closed")})
+	client.observe(resp, err)
+	if err != nil {
+		return err
+	}
+	log.Printf("INFO  Stale PR closed: %s\n", pr.GetHTMLURL())
+
+	if sleepSeconds > 0 {
+		// Sleep - can help to avoid issues with second rate limit.
+		time.Sleep(time.Duration(sleepSeconds) * time.Second)
+	}
+	return nil
+}
+
 // CreatePRDescription renders the body of the PR to be created.
 func CreatePRDescription(changeInfo config.ChangeInfo, enforceNote string) string {
 	lines := []string{"### dependabutler has created this PR to update `.github/dependabot.yml`"}

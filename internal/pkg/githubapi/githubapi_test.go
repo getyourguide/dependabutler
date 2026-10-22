@@ -1,8 +1,10 @@
 package githubapi
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -76,5 +78,86 @@ func TestCheckDirectoryExistsTellsMissingFromFailed(t *testing.T) {
 				t.Errorf("CheckDirectoryExists() = %v, %v, expected %v and an error: %v", exists, err, tt.exists, tt.failure)
 			}
 		})
+	}
+}
+
+// stalePRServer serves an open dependabutler PR number 7, whose commits are authored by the given emails. With no
+// emails, the repo has no open dependabutler PR. It records the requests that change the PR.
+func stalePRServer(t *testing.T, emails []string, changes *[]string) *Client {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/issues":
+			if len(emails) == 0 {
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			_, _ = w.Write([]byte(`[{"number": 7, "pull_request": {"url": "x"}}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7":
+			_, _ = w.Write([]byte(`{"number": 7, "html_url": "https://github.com/acme/app/pull/7"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7/commits":
+			commits := make([]string, 0, len(emails))
+			for _, email := range emails {
+				commits = append(commits, `{"commit": {"author": {"email": "`+email+`"}}}`)
+			}
+			_, _ = w.Write([]byte("[" + strings.Join(commits, ",") + "]"))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/app/issues/7/comments":
+			*changes = append(*changes, "comment")
+			_, _ = w.Write([]byte(`{}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/repos/acme/app/pulls/7":
+			body, _ := io.ReadAll(r.Body)
+			*changes = append(*changes, "edit "+strings.TrimSpace(string(body)))
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			t.Errorf("unexpected request %v %v", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	baseURL := server.URL + "/"
+	gh, err := github.NewClient(github.WithURLs(&baseURL, &baseURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &Client{gh: gh}
+}
+
+func TestGetStalePullRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		emails []string
+		stale  bool
+	}{
+		{"no open PR", nil, false},
+		{"only dependabutler commits", []string{"dependabutler@example.com", "Dependabutler@Example.com"}, true},
+		{"commit by someone else", []string{"dependabutler@example.com", "dev@example.com"}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var changes []string
+			client := stalePRServer(t, tt.emails, &changes)
+
+			pr, err := client.GetStalePullRequest("acme", "app", "dependabutler@example.com")
+
+			if err != nil || (pr != nil) != tt.stale {
+				t.Errorf("GetStalePullRequest() = %v, %v, expected a stale PR: %v", pr, err, tt.stale)
+			}
+			if len(changes) > 0 {
+				t.Errorf("GetStalePullRequest() changed the PR: %v", changes)
+			}
+		})
+	}
+}
+
+func TestCloseStalePullRequestCommentsThenCloses(t *testing.T) {
+	var changes []string
+	client := stalePRServer(t, []string{"dependabutler@example.com"}, &changes)
+
+	err := client.CloseStalePullRequest("acme", "app", &github.PullRequest{Number: github.Ptr(7)}, 0)
+
+	expected := []string{"comment", `edit {"state":"closed"}`}
+	if err != nil || !reflect.DeepEqual(changes, expected) {
+		t.Errorf("CloseStalePullRequest() = %v with changes %q, expected no error and %q", err, changes, expected)
 	}
 }
