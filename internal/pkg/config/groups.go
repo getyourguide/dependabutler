@@ -112,6 +112,10 @@ func validateGroups(section string, ecosystem string, groups Groups) error {
 			return fmt.Errorf("group %q in %v has a dependency-type, which only %v support", named.Name, section, dependencyTypeEcosystems)
 		}
 
+		if err := validateOnlyIfUsed(section, ecosystem, named); err != nil {
+			return err
+		}
+
 		if !named.Group.catchesAll() {
 			continue
 		}
@@ -125,6 +129,39 @@ func validateGroups(section string, ecosystem string, groups Groups) error {
 	}
 
 	return nil
+}
+
+// validateOnlyIfUsed rejects only-if-used where the dependency graph cannot tell whether the group is used: the group
+// would never be written.
+func validateOnlyIfUsed(section string, ecosystem string, named NamedGroup) error {
+	if !named.Group.OnlyIfUsed {
+		return nil
+	}
+
+	if ecosystem == "" {
+		return fmt.Errorf("group %q in %v has only-if-used, which is only allowed in update-overrides", named.Name, section)
+	}
+	if !dependencyGraphCovers(ecosystem) {
+		return fmt.Errorf("group %q in %v has only-if-used, but the dependency graph does not cover %v", named.Name, section, ecosystem)
+	}
+	if len(named.Group.Patterns) == 0 {
+		return fmt.Errorf("group %q in %v has only-if-used, which needs patterns", named.Name, section)
+	}
+
+	return nil
+}
+
+// UsesDependencies returns whether a group has only-if-used, so the dependencies of a repository have to be read.
+func (config *ToolConfig) UsesDependencies() bool {
+	for _, overrides := range config.UpdateOverrides {
+		for _, named := range overrides.Groups {
+			if named.Group.OnlyIfUsed {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (group Group) catchesAll() bool {

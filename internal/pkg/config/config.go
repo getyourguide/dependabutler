@@ -150,6 +150,7 @@ type Group struct {
 	UpdateTypes     []string       `yaml:"update-types,omitempty"`
 	AppliesTo       string         `yaml:"applies-to,omitempty"`
 	GroupBy         string         `yaml:"group-by,omitempty"`
+	OnlyIfUsed      bool           `yaml:"only-if-used,omitempty"`
 	Unknown         map[string]any `yaml:",inline"`
 }
 
@@ -219,6 +220,7 @@ type RepoSettings struct {
 	SlotSchedule      *Schedule
 	EnforcedFields    []string
 	DirectoryGrouping string
+	Dependencies      Dependencies
 }
 
 // ChangeInfo holds the changes applied to a config.
@@ -560,7 +562,7 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 	// check if the manifest itself is covered, and add it if necessary
 	if !config.IsManifestCovered(manifestFile, manifestType, updateRegistries) {
 		// create the new update section using the default properties
-		update := createUpdateEntry(manifestType, manifestPath, toolConfig, repoSettings.SlotSchedule)
+		update := createUpdateEntry(manifestType, manifestPath, toolConfig, repoSettings)
 		// add new registries if required
 		if len(updateRegistries) > 0 {
 			update.Registries = updateRegistries
@@ -582,7 +584,7 @@ func (config *DependabotConfig) ProcessManifest(manifestFile string, manifestTyp
 }
 
 // createUpdateEntry creates a new update entry for a manifest file. A slot schedule, if set, replaces any other schedule.
-func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig, slotSchedule *Schedule) Update {
+func createUpdateEntry(manifestType string, manifestPath string, toolConfig ToolConfig, repoSettings RepoSettings) Update {
 	update := Update{
 		PackageEcosystem:              manifestType,
 		Directory:                     manifestPath,
@@ -600,17 +602,21 @@ func createUpdateEntry(manifestType string, manifestPath string, toolConfig Tool
 		applyOverrides(&update, overrides)
 	}
 
-	if slotSchedule != nil {
+	if repoSettings.SlotSchedule != nil {
 		if hasOverrides && hasScheduleConfig(overrides.Schedule) {
 			log.Printf("WARN  The schedule override for %v is ignored, schedule-slots sets the schedule.", manifestType)
 		}
 
-		update.Schedule = *slotSchedule
+		update.Schedule = *repoSettings.SlotSchedule
 	}
 
 	if toolConfig.stableGroupPrefixes() {
 		ensureStableGroupPrefixes(&update)
 	}
+
+	// After the prefixes, so a group keeps its prefix whether or not the groups before it are used: a renamed group
+	// makes Dependabot close and reopen its pull requests.
+	update.Groups = usedGroups(update.Groups, manifestType, repoSettings.Dependencies)
 
 	fixNewUpdateConfig(&update, manifestType)
 	return update
@@ -790,7 +796,7 @@ func (config *DependabotConfig) fixExistingUpdates(toolConfig ToolConfig, repoSe
 			changeInfo.FixedUpdates = append(changeInfo.FixedUpdates, UpdateInfo{Type: update.PackageEcosystem, Directory: update.Directory, File: ""})
 		}
 
-		if fields := enforceUpdateConfig(update, toolConfig, repoSettings.SlotSchedule, repoSettings.EnforcedFields); len(fields) > 0 {
+		if fields := enforceUpdateConfig(update, toolConfig, repoSettings); len(fields) > 0 {
 			changeInfo.EnforcedUpdates = append(changeInfo.EnforcedUpdates, EnforcedUpdateInfo{Type: update.PackageEcosystem, Directory: updateDirectories(update), Fields: fields})
 		}
 	}

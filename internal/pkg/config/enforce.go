@@ -148,15 +148,15 @@ func (enforce *Enforce) FieldsFor(repo string) []string {
 
 // enforceUpdateConfig sets the enforced fields of an existing update to the values a new update of its ecosystem would
 // get, and returns the fields that changed.
-func enforceUpdateConfig(update *Update, toolConfig ToolConfig, slotSchedule *Schedule, fields []string) []string {
-	if len(fields) == 0 {
+func enforceUpdateConfig(update *Update, toolConfig ToolConfig, repoSettings RepoSettings) []string {
+	if len(repoSettings.EnforcedFields) == 0 {
 		return nil
 	}
 
-	expected := createUpdateEntry(update.PackageEcosystem, update.Directory, toolConfig, slotSchedule)
+	expected := createUpdateEntry(update.PackageEcosystem, update.Directory, toolConfig, repoSettings)
 
 	var changed []string
-	for _, field := range fields {
+	for _, field := range repoSettings.EnforcedFields {
 		switch field {
 		case EnforceSchedule:
 			if !sameYaml(update.Schedule, expected.Schedule) {
