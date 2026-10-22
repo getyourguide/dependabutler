@@ -130,8 +130,8 @@ func TestCreateUpdateEntryGetsTheConfiguredGroups(t *testing.T) {
 		t.Fatalf("ParseToolConfig() failed: %v", err)
 	}
 
-	npm := createUpdateEntry("npm", "/", *toolConfig, nil)
-	gomod := createUpdateEntry("gomod", "/", *toolConfig, nil)
+	npm := createUpdateEntry("npm", "/", *toolConfig, RepoSettings{})
+	gomod := createUpdateEntry("gomod", "/", *toolConfig, RepoSettings{})
 
 	if got := groupNames(npm.Groups); !reflect.DeepEqual(got, []string{"minor-patch", "development-major"}) {
 		t.Errorf("npm groups = %v, expected the override groups in their order", got)
@@ -150,7 +150,7 @@ func TestCreateUpdateEntryPrefixesGroupsLikeExistingEntries(t *testing.T) {
 		t.Fatalf("ParseToolConfig() failed: %v", err)
 	}
 
-	npm := createUpdateEntry("npm", "/", *toolConfig, nil)
+	npm := createUpdateEntry("npm", "/", *toolConfig, RepoSettings{})
 
 	if got := groupNames(npm.Groups); !reflect.DeepEqual(got, []string{"01_minor-patch", "02_development-major"}) {
 		t.Errorf("npm groups = %v, expected the prefixed names stable-group-prefixes writes", got)
@@ -178,6 +178,21 @@ func TestParseToolConfigRejectsInvalidGroups(t *testing.T) {
 			"update-defaults:\n  groups:\n    everything: {patterns: ['*']}\n    react: {patterns: ['react*']}\n",
 			`"everything"`,
 		},
+		{
+			"only-if-used in the defaults",
+			"update-defaults:\n  groups:\n    shared: {patterns: ['org/*'], only-if-used: true}\n",
+			"only allowed in update-overrides",
+		},
+		{
+			"only-if-used on an ecosystem the dependency graph does not cover",
+			"update-overrides:\n  docker:\n    groups:\n      shared: {patterns: ['org/*'], only-if-used: true}\n",
+			"does not cover docker",
+		},
+		{
+			"only-if-used without patterns",
+			"update-overrides:\n  npm:\n    groups:\n      dev: {dependency-type: development, only-if-used: true}\n",
+			"needs patterns",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := ParseToolConfig([]byte(tt.config))
@@ -203,6 +218,22 @@ update-defaults:
 	}
 }
 
+func TestParseToolConfigAcceptsOnlyIfUsedInOverrides(t *testing.T) {
+	withGroup, err := ParseToolConfig([]byte("update-overrides:\n  github-actions:\n    groups:\n      shared: {patterns: ['org/actions*'], only-if-used: true}\n"))
+	if err != nil {
+		t.Fatalf("ParseToolConfig() failed: %v", err)
+	}
+
+	without, err := ParseToolConfig([]byte("update-overrides:\n  github-actions:\n    groups:\n      shared: {patterns: ['org/actions*']}\n"))
+	if err != nil {
+		t.Fatalf("ParseToolConfig() failed: %v", err)
+	}
+
+	if !withGroup.UsesDependencies() || without.UsesDependencies() {
+		t.Errorf("UsesDependencies() = %v and %v, expected true only with only-if-used", withGroup.UsesDependencies(), without.UsesDependencies())
+	}
+}
+
 func TestParseToolConfigDropsUnknownGroupKeys(t *testing.T) {
 	toolConfig, err := ParseToolConfig([]byte(`
 stable-group-prefixes: false
@@ -218,8 +249,8 @@ update-overrides:
 		t.Fatalf("ParseToolConfig() failed: %v", err)
 	}
 
-	gomod, _ := createUpdateEntry("gomod", "/", *toolConfig, nil).Groups.Get("all")
-	npm, _ := createUpdateEntry("npm", "/", *toolConfig, nil).Groups.Get("all")
+	gomod, _ := createUpdateEntry("gomod", "/", *toolConfig, RepoSettings{}).Groups.Get("all")
+	npm, _ := createUpdateEntry("npm", "/", *toolConfig, RepoSettings{}).Groups.Get("all")
 
 	if gomod.Unknown != nil || npm.Unknown != nil {
 		t.Errorf("unknown group keys kept: gomod %v, npm %v", gomod.Unknown, npm.Unknown)

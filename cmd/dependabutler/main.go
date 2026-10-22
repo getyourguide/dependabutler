@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -229,6 +230,33 @@ func directoryGrouping(grouping *config.DirectoryGrouping, readProperty func() (
 	return grouping.ModeFor(value), nil
 }
 
+// repoDependencies returns the dependencies of a repo, or nil when no group has only-if-used. They are read from the
+// dependency graph only then, as it costs an API call.
+func repoDependencies(toolConfig *config.ToolConfig, repo string, readDependencies func() (config.Dependencies, error)) (config.Dependencies, error) {
+	if !toolConfig.UsesDependencies() {
+		return nil, nil
+	}
+
+	dependencies, err := readDependencies()
+	if err != nil {
+		return nil, fmt.Errorf("could not read the dependency graph of repo %v: %w", repo, err)
+	}
+
+	return dependencies, nil
+}
+
+// localEnforcedFields returns the fields to enforce in local mode. Without the dependency graph, groups with
+// only-if-used cannot be told apart, so enforcing groups would remove the ones a remote run added.
+func localEnforcedFields(toolConfig *config.ToolConfig, repo string) []string {
+	fields := toolConfig.Enforce.FieldsFor(repo)
+	if !toolConfig.UsesDependencies() {
+		return fields
+	}
+
+	log.Printf("WARN  The dependency graph is not read in local mode: groups with only-if-used are left out of new entries, and groups of existing entries are not enforced.")
+	return slices.DeleteFunc(fields, func(field string) bool { return field == config.EnforceGroups })
+}
+
 // localRepoName returns the repo name for mode=local: repo if set, the name of dir otherwise.
 func localRepoName(repo string, dir string) string {
 	if repo != "" {
@@ -368,7 +396,15 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 		return false
 	}
 
-	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: toolConfig.Enforce.FieldsFor(repo), DirectoryGrouping: grouping}
+	dependencies, err := repoDependencies(&toolConfig, repo, func() (config.Dependencies, error) {
+		return gitHubClient.GetDependencies(org, repo)
+	})
+	if err != nil {
+		log.Printf("ERROR Skipping repo %v: %v", repo, err)
+		return false
+	}
+
+	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: toolConfig.Enforce.FieldsFor(repo), DirectoryGrouping: grouping, Dependencies: dependencies}
 	yamlContent, changeInfo, err := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, repoSettings, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
 	if err != nil {
 		log.Printf("ERROR Skipping repo %v: %v", repo, err)
@@ -463,7 +499,7 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string, re
 	loadFileParameters := config.LoadFileContentParameters{Directory: dir}
 	checkDirectoryExistsParameters := config.CheckDirectoryExistsParameters{Directory: dir}
 	grouping := toolConfig.DirectoryGrouping.ModeFor("")
-	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: toolConfig.Enforce.FieldsFor(repo), DirectoryGrouping: grouping}
+	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: localEnforcedFields(&toolConfig, repo), DirectoryGrouping: grouping}
 	yamlContent, _, err := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, repoSettings, dir, LoadLocalFileContent, loadFileParameters, CheckLocalDirectoryExists, checkDirectoryExistsParameters)
 	if err != nil {
 		log.Printf("ERROR Skipping %v: %v", dir, err)
