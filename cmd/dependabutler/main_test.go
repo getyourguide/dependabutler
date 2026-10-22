@@ -295,3 +295,23 @@ func TestRemoteRepoNames(t *testing.T) {
 		})
 	}
 }
+
+func TestGetUpdatedConfigYamlTellsAnUnparsableConfigFromNoUpdate(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		current string
+		err     error
+	}{
+		{"unparsable", "version: [", errConfigNotParsed},
+		{"no update needed", "version: 2\n", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			yamlContent, _, err := GetUpdatedConfigYaml([]byte(tt.current), nil, config.ToolConfig{}, config.RepoSettings{}, "repo",
+				LoadLocalFileContent, config.LoadFileContentParameters{}, CheckLocalDirectoryExists, config.CheckDirectoryExistsParameters{})
+
+			if yamlContent != nil || !errors.Is(err, tt.err) {
+				t.Errorf("GetUpdatedConfigYaml() = %q, %v, expected no content and %v", yamlContent, err, tt.err)
+			}
+		})
+	}
+}
