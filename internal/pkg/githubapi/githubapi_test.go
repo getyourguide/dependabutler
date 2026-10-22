@@ -96,7 +96,7 @@ func stalePRServer(t *testing.T, emails []string, total int, changes *[]string) 
 			}
 			_, _ = w.Write([]byte(`[{"number": 7, "pull_request": {"url": "x"}}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7":
-			_, _ = w.Write([]byte(`{"number": 7, "html_url": "https://github.com/acme/app/pull/7", "commits": ` + strconv.Itoa(total) + `}`))
+			_, _ = w.Write([]byte(`{"number": 7, "html_url": "https://github.com/acme/app/pull/7", "head": {"ref": "dependabutler-update-0a1b"}, "commits": ` + strconv.Itoa(total) + `}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7/commits":
 			commits := make([]string, 0, len(emails))
 			for _, email := range emails {
@@ -128,20 +128,22 @@ func stalePRServer(t *testing.T, emails []string, total int, changes *[]string) 
 func TestGetStalePullRequest(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
+		branch string
 		emails []string
 		total  int
 		stale  bool
 	}{
-		{"no open PR", nil, 0, false},
-		{"only dependabutler commits", []string{"dependabutler@example.com", "Dependabutler@Example.com"}, 2, true},
-		{"commit by someone else", []string{"dependabutler@example.com", "dev@example.com"}, 2, false},
-		{"more commits than listed", []string{"dependabutler@example.com"}, 251, false},
+		{"no open PR", "dependabutler-update", nil, 0, false},
+		{"only dependabutler commits", "dependabutler-update", []string{"dependabutler@example.com", "Dependabutler@Example.com"}, 2, true},
+		{"commit by someone else", "dependabutler-update", []string{"dependabutler@example.com", "dev@example.com"}, 2, false},
+		{"more commits than listed", "dependabutler-update", []string{"dependabutler@example.com"}, 251, false},
+		{"other branch", "config-sync", []string{"dependabutler@example.com"}, 1, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var changes []string
 			client := stalePRServer(t, tt.emails, tt.total, &changes)
 
-			pr, err := client.GetStalePullRequest("acme", "app", "dependabutler@example.com")
+			pr, err := client.GetStalePullRequest("acme", "app", config.PullRequestParameters{BranchName: tt.branch, AuthorEmail: "dependabutler@example.com"})
 
 			if err != nil || (pr != nil) != tt.stale {
 				t.Errorf("GetStalePullRequest() = %v, %v, expected a stale PR: %v", pr, err, tt.stale)
@@ -150,6 +152,24 @@ func TestGetStalePullRequest(t *testing.T) {
 				t.Errorf("GetStalePullRequest() changed the PR: %v", changes)
 			}
 		})
+	}
+}
+
+func TestIsDependabutlerBranch(t *testing.T) {
+	for _, tt := range []struct {
+		branch     string
+		branchName string
+		expected   bool
+	}{
+		{"dependabutler-update", "dependabutler-update", true},
+		{"dependabutler-update-0a1b", "dependabutler-update", true},
+		{"dependabutler-updates", "dependabutler-update", false},
+		{"feature", "dependabutler-update", false},
+		{"feature", "", false},
+	} {
+		if got := isDependabutlerBranch(tt.branch, tt.branchName); got != tt.expected {
+			t.Errorf("isDependabutlerBranch(%q, %q) = %v, expected %v", tt.branch, tt.branchName, got, tt.expected)
+		}
 	}
 }
 

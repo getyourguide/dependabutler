@@ -199,13 +199,19 @@ func (client *Client) CreateOrUpdatePullRequest(org string, repo string, baseBra
 const stalePRComment = "dependabutler closes this PR: `.github/dependabot.yml` on the default branch needs no update anymore, " +
 	"so the change in this PR is no longer needed. The branch is kept."
 
-// GetStalePullRequest returns the open PR of dependabutler, if every commit on it is authored by authorEmail. A PR with
-// commits by anyone else is left alone, so that their changes are not thrown away. So is a PR whose commits could not
-// all be checked, as GitHub lists at most 250 commits of a PR.
-func (client *Client) GetStalePullRequest(org string, repo string, authorEmail string) (*github.PullRequest, error) {
+// GetStalePullRequest returns the open PR of dependabutler, if it comes from a branch named by branch-name and every
+// commit on it is authored by author-email. A PR from another branch or with commits by anyone else is left alone, so
+// that their changes are not thrown away. So is a PR whose commits could not all be checked, as GitHub lists at most
+// 250 commits of a PR.
+func (client *Client) GetStalePullRequest(org string, repo string, prParams config.PullRequestParameters) (*github.PullRequest, error) {
 	pr, err := client.getExistingPr(org, repo)
 	if err != nil || pr == nil {
 		return nil, err
+	}
+
+	if !isDependabutlerBranch(pr.GetHead().GetRef(), prParams.BranchName) {
+		log.Printf("INFO  PR %v is not on a %v branch, leaving it open.", pr.GetHTMLURL(), prParams.BranchName)
+		return nil, nil
 	}
 
 	ctx := context.Background()
@@ -218,7 +224,7 @@ func (client *Client) GetStalePullRequest(org string, repo string, authorEmail s
 			return nil, err
 		}
 		for _, commit := range commits {
-			if !strings.EqualFold(commit.GetCommit().GetAuthor().GetEmail(), authorEmail) {
+			if !strings.EqualFold(commit.GetCommit().GetAuthor().GetEmail(), prParams.AuthorEmail) {
 				log.Printf("INFO  PR %v has commits by other authors, leaving it open.", pr.GetHTMLURL())
 				return nil, nil
 			}
@@ -235,6 +241,12 @@ func (client *Client) GetStalePullRequest(org string, repo string, authorEmail s
 		return nil, nil
 	}
 	return pr, nil
+}
+
+// isDependabutlerBranch tells if branch is named by branchName, with or without the random suffix of
+// branch-name-random-suffix.
+func isDependabutlerBranch(branch string, branchName string) bool {
+	return branchName != "" && (branch == branchName || strings.HasPrefix(branch, branchName+"-"))
 }
 
 // CloseStalePullRequest comments on a PR that is no longer needed and closes it. The branch is kept.
