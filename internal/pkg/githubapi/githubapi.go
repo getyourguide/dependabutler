@@ -4,6 +4,7 @@ package githubapi
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"strings"
@@ -195,6 +196,99 @@ func (client *Client) CreateOrUpdatePullRequest(org string, repo string, baseBra
 	return nil
 }
 
+// branchSuffixBytes is the number of random bytes in the suffix of a branch name, with branch-name-random-suffix.
+const branchSuffixBytes = 16
+
+// stalePRComment is posted on a PR before it is closed as stale.
+const stalePRComment = "dependabutler closes this PR: `.github/dependabot.yml` on the default branch needs no update anymore, " +
+	"so the change in this PR is no longer needed. The branch is kept."
+
+// GetStalePullRequest returns the open PR of dependabutler, if it comes from a branch named by branch-name and every
+// commit on it is authored by author-email. A PR from another branch or with commits by anyone else is left alone, so
+// that their changes are not thrown away. So is a PR whose commits could not all be checked, as GitHub lists at most
+// 250 commits of a PR.
+func (client *Client) GetStalePullRequest(org string, repo string, prParams config.PullRequestParameters) (*github.PullRequest, error) {
+	pr, err := client.getExistingPr(org, repo)
+	if err != nil || pr == nil {
+		return nil, err
+	}
+
+	if !isDependabutlerBranch(pr.GetHead().GetRef(), prParams) {
+		log.Printf("INFO  PR %v is not on a %v branch, leaving it open.", pr.GetHTMLURL(), prParams.BranchName)
+		return nil, nil
+	}
+
+	ctx := context.Background()
+	opts := &github.ListOptions{PerPage: 100}
+	checked := 0
+	for {
+		commits, resp, err := client.gh.PullRequests.ListCommits(ctx, org, repo, pr.GetNumber(), opts)
+		client.observe(resp, err)
+		if err != nil {
+			return nil, err
+		}
+		for _, commit := range commits {
+			if !strings.EqualFold(commit.GetCommit().GetAuthor().GetEmail(), prParams.AuthorEmail) {
+				log.Printf("INFO  PR %v has commits by other authors, leaving it open.", pr.GetHTMLURL())
+				return nil, nil
+			}
+		}
+		checked += len(commits)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	if checked != pr.GetCommits() {
+		log.Printf("INFO  PR %v has %d commits, but %d could be checked, leaving it open.", pr.GetHTMLURL(), pr.GetCommits(), checked)
+		return nil, nil
+	}
+	return pr, nil
+}
+
+// isDependabutlerBranch tells if branch is a name getNewBranchName gives: branch-name itself, or with
+// branch-name-random-suffix, branch-name followed by "-" and the hex encoded random suffix.
+func isDependabutlerBranch(branch string, prParams config.PullRequestParameters) bool {
+	if prParams.BranchName == "" {
+		return false
+	}
+	if !prParams.BranchNameRandomSuffix {
+		return branch == prParams.BranchName
+	}
+
+	suffix, found := strings.CutPrefix(branch, prParams.BranchName+"-")
+	if !found || len(suffix) != hex.EncodedLen(branchSuffixBytes) {
+		return false
+	}
+	_, err := hex.DecodeString(suffix)
+	return err == nil
+}
+
+// CloseStalePullRequest comments on a PR that is no longer needed and closes it. The branch is kept.
+func (client *Client) CloseStalePullRequest(org string, repo string, pr *github.PullRequest, sleepSeconds int) error {
+	ctx := context.Background()
+	comment := &github.IssueComment{Body: github.Ptr(stalePRComment)}
+	_, resp, err := client.gh.Issues.CreateComment(ctx, org, repo, pr.GetNumber(), comment)
+	client.observe(resp, err)
+	if err != nil {
+		return err
+	}
+
+	_, resp, err = client.gh.PullRequests.Edit(ctx, org, repo, pr.GetNumber(), &github.PullRequest{State: github.Ptr("closed")})
+	client.observe(resp, err)
+	if err != nil {
+		return err
+	}
+	log.Printf("INFO  Stale PR closed: %s\n", pr.GetHTMLURL())
+
+	if sleepSeconds > 0 {
+		// Sleep - can help to avoid issues with second rate limit.
+		time.Sleep(time.Duration(sleepSeconds) * time.Second)
+	}
+	return nil
+}
+
 // CreatePRDescription renders the body of the PR to be created.
 func CreatePRDescription(changeInfo config.ChangeInfo, enforceNote string) string {
 	lines := []string{"### dependabutler has created this PR to update `.github/dependabot.yml`"}
@@ -361,7 +455,7 @@ func (client *Client) getExistingPr(org string, repo string) (*github.PullReques
 func getNewBranchName(prParams config.PullRequestParameters) (string, error) {
 	branchName := prParams.BranchName
 	if prParams.BranchNameRandomSuffix {
-		randToken, err := util.RandToken(16)
+		randToken, err := util.RandToken(branchSuffixBytes)
 		if err != nil {
 			return "", err
 		}

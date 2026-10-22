@@ -173,6 +173,28 @@ pull-request-parameters:
 The note is added to every pull request with reset settings. The title is set only when the pull request is created:
 an open dependabutler pull request keeps its title when enforced settings are added to it.
 
+### Closing stale pull requests
+A dependabutler pull request goes stale when `dependabot.yml` on the default branch no longer needs an update, for
+example because the configuration changed or the repository was fixed by hand. Merging it would put back what an
+earlier run wanted. With `close-stale-prs`, dependabutler closes such a pull request with a comment when the repository
+needs no update:
+
+```yaml
+pull-request-parameters:
+  close-stale-prs: true
+```
+
+- Only a pull request on a branch dependabutler names (`branch-name`, with the random suffix if that is on) whose
+  commits are all authored by `author-email` is closed. A pull request someone else pushed to is left open, and so is
+  one opened before `branch-name` or `branch-name-random-suffix` changed.
+- A pull request is also left open when not all of its commits can be checked (GitHub lists at most 250), or when the
+  file tree of the repository is truncated by GitHub, since manifests may be missed.
+- The branch is kept, so the pull request can be reopened.
+- A repository whose `dependabot.yml` cannot be parsed is skipped, and its pull request is left open.
+- Each repository that needs no update takes one more API call. An open pull request takes at least two more to check
+  it (one per 100 commits), and two more to close it.
+- In log-only mode, the pull request is only logged.
+
 ### Parameters
 
 | parameter           | mandatory | default             | description                                   |

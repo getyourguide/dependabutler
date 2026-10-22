@@ -1,8 +1,11 @@
 package githubapi
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -76,5 +79,114 @@ func TestCheckDirectoryExistsTellsMissingFromFailed(t *testing.T) {
 				t.Errorf("CheckDirectoryExists() = %v, %v, expected %v and an error: %v", exists, err, tt.exists, tt.failure)
 			}
 		})
+	}
+}
+
+// stalePRServer serves an open dependabutler PR number 7, which reports total commits and lists those authored by the
+// given emails. With no emails, the repo has no open dependabutler PR. It records the requests that change the PR.
+func stalePRServer(t *testing.T, emails []string, total int, changes *[]string) *Client {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/issues":
+			if len(emails) == 0 {
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			_, _ = w.Write([]byte(`[{"number": 7, "pull_request": {"url": "x"}}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7":
+			_, _ = w.Write([]byte(`{"number": 7, "html_url": "https://github.com/acme/app/pull/7", "head": {"ref": "dependabutler-update-0123456789abcdef0123456789abcdef"}, "commits": ` + strconv.Itoa(total) + `}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7/commits":
+			commits := make([]string, 0, len(emails))
+			for _, email := range emails {
+				commits = append(commits, `{"commit": {"author": {"email": "`+email+`"}}}`)
+			}
+			_, _ = w.Write([]byte("[" + strings.Join(commits, ",") + "]"))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/app/issues/7/comments":
+			*changes = append(*changes, "comment")
+			_, _ = w.Write([]byte(`{}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/repos/acme/app/pulls/7":
+			body, _ := io.ReadAll(r.Body)
+			*changes = append(*changes, "edit "+strings.TrimSpace(string(body)))
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			t.Errorf("unexpected request %v %v", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	baseURL := server.URL + "/"
+	gh, err := github.NewClient(github.WithURLs(&baseURL, &baseURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &Client{gh: gh}
+}
+
+func TestGetStalePullRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		branch string
+		emails []string
+		total  int
+		stale  bool
+	}{
+		{"no open PR", "dependabutler-update", nil, 0, false},
+		{"only dependabutler commits", "dependabutler-update", []string{"dependabutler@example.com", "Dependabutler@Example.com"}, 2, true},
+		{"commit by someone else", "dependabutler-update", []string{"dependabutler@example.com", "dev@example.com"}, 2, false},
+		{"more commits than listed", "dependabutler-update", []string{"dependabutler@example.com"}, 251, false},
+		{"other branch", "config-sync", []string{"dependabutler@example.com"}, 1, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var changes []string
+			client := stalePRServer(t, tt.emails, tt.total, &changes)
+
+			pr, err := client.GetStalePullRequest("acme", "app", config.PullRequestParameters{BranchName: tt.branch, BranchNameRandomSuffix: true, AuthorEmail: "dependabutler@example.com"})
+
+			if err != nil || (pr != nil) != tt.stale {
+				t.Errorf("GetStalePullRequest() = %v, %v, expected a stale PR: %v", pr, err, tt.stale)
+			}
+			if len(changes) > 0 {
+				t.Errorf("GetStalePullRequest() changed the PR: %v", changes)
+			}
+		})
+	}
+}
+
+func TestIsDependabutlerBranch(t *testing.T) {
+	for _, tt := range []struct {
+		branch     string
+		branchName string
+		random     bool
+		expected   bool
+	}{
+		{"dependabutler-update", "dependabutler-update", false, true},
+		{"dependabutler-update-0123456789abcdef0123456789abcdef", "dependabutler-update", false, false},
+		{"dependabutler-update-enforcement", "dependabutler-update", false, false},
+		{"dependabutler-update-0123456789abcdef0123456789abcdef", "dependabutler-update", true, true},
+		{"dependabutler-update", "dependabutler-update", true, false},
+		{"dependabutler-update-enforcement", "dependabutler-update", true, false},
+		{"dependabutler-update-0123456789abcdef0123456789abcd", "dependabutler-update", true, false},
+		{"dependabutler-update-0123456789abcdef0123456789abcdzz", "dependabutler-update", true, false},
+		{"feature", "", false, false},
+	} {
+		prParams := config.PullRequestParameters{BranchName: tt.branchName, BranchNameRandomSuffix: tt.random}
+		if got := isDependabutlerBranch(tt.branch, prParams); got != tt.expected {
+			t.Errorf("isDependabutlerBranch(%q, %q, random suffix %v) = %v, expected %v", tt.branch, tt.branchName, tt.random, got, tt.expected)
+		}
+	}
+}
+
+func TestCloseStalePullRequestCommentsThenCloses(t *testing.T) {
+	var changes []string
+	client := stalePRServer(t, []string{"dependabutler@example.com"}, 1, &changes)
+
+	err := client.CloseStalePullRequest("acme", "app", &github.PullRequest{Number: github.Ptr(7)}, 0)
+
+	expected := []string{"comment", `edit {"state":"closed"}`}
+	if err != nil || !reflect.DeepEqual(changes, expected) {
+		t.Errorf("CloseStalePullRequest() = %v with changes %q, expected no error and %q", err, changes, expected)
 	}
 }

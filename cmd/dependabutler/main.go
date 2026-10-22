@@ -370,9 +370,20 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 
 	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: toolConfig.Enforce.FieldsFor(repo), DirectoryGrouping: grouping}
 	yamlContent, changeInfo, err := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, repoSettings, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
+	if errors.Is(err, errConfigNotParsed) {
+		return true // already logged, not counted as a failure
+	}
 	if err != nil {
 		log.Printf("ERROR Skipping repo %v: %v", repo, err)
 		return false
+	}
+
+	if yamlContent == nil && toolConfig.PullRequestParameters.CloseStalePRs {
+		if loaded.treeTruncated {
+			log.Printf("WARN  Not closing a stale PR on repo %v: the file tree is truncated, so manifests may be missed.", repo)
+			return true
+		}
+		return closeStalePullRequest(gitHubClient, execute, org, repo, toolConfig.PullRequestParameters)
 	}
 
 	if yamlContent != nil {
@@ -392,6 +403,30 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 		} else {
 			log.Printf("INFO  log-only mode, would create PR for %v:\n----------\n%v\n----------\n%v\n----------\nuse -execute=true to apply", repo, prDesc, string(yamlContent))
 		}
+	}
+	return true
+}
+
+// closeStalePullRequest closes the open PR of a repo whose config needs no update: the PR holds what an earlier run
+// wanted, so merging it would undo the current config. In log-only mode, the PR is only logged.
+func closeStalePullRequest(gitHubClient *githubapi.Client, execute bool, org string, repo string, prParams config.PullRequestParameters) bool {
+	pr, err := gitHubClient.GetStalePullRequest(org, repo, prParams)
+	if err != nil {
+		log.Printf("ERROR Could not check for a stale PR on repo %v: %v", repo, err)
+		return false
+	}
+	if pr == nil {
+		return true
+	}
+
+	if !execute {
+		log.Printf("INFO  log-only mode, would close stale PR %v, use -execute=true to apply", pr.GetHTMLURL())
+		return true
+	}
+
+	if err := gitHubClient.CloseStalePullRequest(org, repo, pr, prParams.SleepAfterPRAction); err != nil {
+		log.Printf("ERROR Could not close stale PR %v: %v", pr.GetHTMLURL(), err)
+		return false
 	}
 	return true
 }
@@ -465,6 +500,9 @@ func processLocalRepo(toolConfig config.ToolConfig, execute bool, dir string, re
 	grouping := toolConfig.DirectoryGrouping.ModeFor("")
 	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: toolConfig.Enforce.FieldsFor(repo), DirectoryGrouping: grouping}
 	yamlContent, _, err := GetUpdatedConfigYaml(currentConfig, manifests, toolConfig, repoSettings, dir, LoadLocalFileContent, loadFileParameters, CheckLocalDirectoryExists, checkDirectoryExistsParameters)
+	if errors.Is(err, errConfigNotParsed) {
+		return true // already logged, not counted as a failure
+	}
 	if err != nil {
 		log.Printf("ERROR Skipping %v: %v", dir, err)
 		return false
@@ -558,14 +596,19 @@ func main() {
 	}
 }
 
+// errConfigNotParsed is returned by GetUpdatedConfigYaml when the current dependabot.yml cannot be parsed. The error is
+// logged where it happens, and the repo is skipped without counting as a failure.
+var errConfigNotParsed = errors.New("could not parse the current config")
+
 // GetUpdatedConfigYaml returns the new .dependabot.yml file content, based on the current content and the manifests found.
+// It returns no content and no error when the config needs no update.
 func GetUpdatedConfigYaml(currentConfig []byte, manifests map[string]string, toolConfig config.ToolConfig, repoSettings config.RepoSettings, repo string,
 	loadFileFn config.LoadFileContent, loadFileParams config.LoadFileContentParameters, checkDirectoryExistsFn config.CheckDirectoryExists, checkDirectoryExistsParams config.CheckDirectoryExistsParameters,
 ) ([]byte, config.ChangeInfo, error) {
 	dependabotConfig, err := config.ParseDependabotConfig(currentConfig)
 	if err != nil {
 		log.Printf("ERROR Could not parse current config for %v: %v", repo, err)
-		return nil, config.ChangeInfo{}, nil
+		return nil, config.ChangeInfo{}, errConfigNotParsed
 	}
 	changeInfo, err := dependabotConfig.UpdateConfig(manifests, toolConfig, repoSettings, loadFileFn, loadFileParams, checkDirectoryExistsFn, checkDirectoryExistsParams)
 	if err != nil {

@@ -186,3 +186,13 @@ Initial version.
   when update entries are sorted. Before, every comment was removed. A comment whose key or item is removed, or whose
   update entry gets other directories, is dropped with a warning in the log. So are the comments of identical items in
   one list, which cannot be told apart.
+
+## v0.12.0
+
+- Added `close-stale-prs` to `pull-request-parameters`: when a repository needs no update, its open dependabutler pull
+  request on a `branch-name` branch is closed with a comment, since merging it would put back what an earlier run
+  wanted. Pull requests with commits by other authors, or with more commits than GitHub lists, are left open, as are
+  those of a repository whose file tree is truncated. The branch is kept. Off unless set. See "Closing stale pull
+  requests" in the README.
+- A `dependabot.yml` that cannot be parsed is told apart from one that needs no update. The repository is still skipped
+  without counting as a failure.

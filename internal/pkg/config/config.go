@@ -66,6 +66,7 @@ type PullRequestParameters struct {
 	EnforceCommitMessage   string   `yaml:"enforce-commit-message,omitempty"`
 	EnforcePRTitle         string   `yaml:"enforce-pr-title,omitempty"`
 	EnforcePRNote          string   `yaml:"enforce-pr-note,omitempty"`
+	CloseStalePRs          bool     `yaml:"close-stale-prs,omitempty"`
 }
 
 // DefaultRegistry holds the config items of a default registry
