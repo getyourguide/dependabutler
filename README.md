@@ -50,7 +50,31 @@ repository. The configuration file is rejected when:
 - a group has `dependency-type` in `update-defaults`, or in `update-overrides` of an ecosystem other than bundler,
   composer, maven, mix, npm and pip, which Dependabot supports it for;
 - a group matching every dependency (`patterns: ["*"]` and nothing else) comes before another group that applies to the
-  same updates: Dependabot puts a dependency in the first group it matches, so the later group would stay empty.
+  same updates: Dependabot puts a dependency in the first group it matches, so the later group would stay empty;
+- a group has `only-if-used` in `update-defaults`, in `update-overrides` of an ecosystem the dependency graph does not
+  cover, like docker or terraform, or without `patterns`.
+
+A group with `only-if-used: true` is added only to repositories that have a dependency of the ecosystem matching its
+`patterns` and none of its `exclude-patterns`. As in Dependabot, `*` matches any characters, including `/`, and case is
+ignored. This keeps a group for one family of dependencies out of the repositories that do not use them:
+
+```yaml
+update-overrides:
+  github-actions:
+    groups:
+      shared-actions: {patterns: ["my-org/actions*"], only-if-used: true}
+      minor-patch: {patterns: ["*"], update-types: [minor, patch]}
+```
+
+- The dependencies are read from the repository's dependency graph, with one API call per repository, and only when a
+  group has `only-if-used`. When the call fails, the repository is skipped and counted as failed. The dependency graph
+  also lists indirect dependencies, so a dependency the repository only pulls in through another one counts as well.
+- `only-if-used` is not written to `dependabot.yml`. New entries get the group when it is used. Existing entries gain or
+  lose it as the dependencies change only with `groups` in `enforce`.
+- With `stable-group-prefixes`, groups are numbered by their place in the configuration file, so a group keeps its
+  prefix whether or not the groups before it are used.
+- Local mode does not read the dependency graph: it leaves these groups out of new entries and does not enforce the
+  groups of existing ones, with a warning.
 
 ### Directory grouping
 In a repository with several directories for the same ecosystem, `directory-grouping` chooses how they are split into

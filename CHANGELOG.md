@@ -186,3 +186,11 @@ Initial version.
   when update entries are sorted. Before, every comment was removed. A comment whose key or item is removed, or whose
   update entry gets other directories, is dropped with a warning in the log. So are the comments of identical items in
   one list, which cannot be told apart.
+
+## v0.12.0
+
+- Added `only-if-used` for groups in `update-overrides`: the group is added only to repositories that have a dependency
+  of the ecosystem matching its patterns, read from the repository's dependency graph. A group for one family of
+  dependencies no longer has to be written into every repository. The dependency graph is read only when a group has
+  `only-if-used`, with one API call per repository; when it cannot be read, the repository is skipped and counted as
+  failed.
