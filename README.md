@@ -184,8 +184,9 @@ pull-request-parameters:
   close-stale-prs: true
 ```
 
-- Only a pull request on a `branch-name` branch whose commits are all authored by `author-email` is closed. A pull
-  request someone else pushed to is left open.
+- Only a pull request on a branch dependabutler names (`branch-name`, with the random suffix if that is on) whose
+  commits are all authored by `author-email` is closed. A pull request someone else pushed to is left open, and so is
+  one opened before `branch-name` or `branch-name-random-suffix` changed.
 - A pull request is also left open when not all of its commits can be checked (GitHub lists at most 250), or when the
   file tree of the repository is truncated by GitHub, since manifests may be missed.
 - The branch is kept, so the pull request can be reopened.
