@@ -2,6 +2,7 @@ package githubapi
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/getyourguide/dependabutler/internal/pkg/config"
 	"github.com/google/go-github/v90/github"
@@ -13,6 +14,12 @@ func (client *Client) GetDependencies(org string, repo string) (config.Dependenc
 	client.observe(resp, err)
 	if err != nil {
 		return nil, err
+	}
+
+	// GitHub answers 202 while it builds the SBOM, with an empty payload. go-github reads that as a response without
+	// an SBOM. Returning an empty graph would drop every only-if-used group instead of skipping the repository.
+	if sbom == nil || sbom.SBOM == nil {
+		return nil, fmt.Errorf("the dependency graph of %v is not ready", repo)
 	}
 
 	return dependenciesOf(sbom), nil

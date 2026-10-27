@@ -1,6 +1,8 @@
 package githubapi
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
@@ -38,5 +40,23 @@ func TestDependenciesOf(t *testing.T) {
 func TestDependenciesOfAnEmptySBOM(t *testing.T) {
 	if got := dependenciesOf(&github.SBOM{}); len(got) != 0 || got == nil {
 		t.Errorf("dependenciesOf() = %#v, expected an empty, non-nil value", got)
+	}
+}
+
+func TestGetDependenciesFailsWhileTheGraphIsBuilt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(server.Close)
+
+	gh, err := github.NewClient(github.WithAuthToken("token"), github.WithURLs(&server.URL, &server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client := &Client{gh: gh}
+
+	if _, err := client.GetDependencies("org", "repo"); err == nil {
+		t.Error("GetDependencies() with a 202 response succeeded, expected an error")
 	}
 }
