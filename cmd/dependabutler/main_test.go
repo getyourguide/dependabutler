@@ -212,6 +212,57 @@ func TestDirectoryGrouping(t *testing.T) {
 	}
 }
 
+func TestRepoDependencies(t *testing.T) {
+	read := func(dependencies config.Dependencies, err error) func() (config.Dependencies, error) {
+		return func() (config.Dependencies, error) { return dependencies, err }
+	}
+	withOnlyIfUsed := &config.ToolConfig{UpdateOverrides: map[string]config.UpdateDefaults{
+		"github-actions": {Groups: config.Groups{{Name: "shared", Group: config.Group{Patterns: []string{"org/*"}, OnlyIfUsed: true}}}},
+	}}
+	found := config.Dependencies{"github-actions": {"org/setup"}}
+
+	for _, tt := range []struct {
+		name       string
+		toolConfig *config.ToolConfig
+		read       func() (config.Dependencies, error)
+		want       config.Dependencies
+		wantErr    bool
+	}{
+		{"no group with only-if-used", &config.ToolConfig{}, nil, nil, false},
+		{"read", withOnlyIfUsed, read(found, nil), found, false},
+		{"cannot be read", withOnlyIfUsed, read(nil, errors.New("not found")), nil, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := repoDependencies(tt.toolConfig, "repo", tt.read)
+
+			if (err != nil) != tt.wantErr || !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("repoDependencies() = %v, %v; expected %v, error %v", got, err, tt.want, tt.wantErr)
+			}
+			if err != nil && !strings.Contains(err.Error(), "repo") {
+				t.Errorf("error %q does not name the repo", err)
+			}
+		})
+	}
+}
+
+func TestLocalEnforcedFieldsKeepGroupsWithOnlyIfUsed(t *testing.T) {
+	enforce := &config.Enforce{Fields: []string{config.EnforceSchedule, config.EnforceGroups}}
+	withOnlyIfUsed := &config.ToolConfig{Enforce: enforce, UpdateOverrides: map[string]config.UpdateDefaults{
+		"github-actions": {Groups: config.Groups{{Name: "shared", Group: config.Group{Patterns: []string{"org/*"}, OnlyIfUsed: true}}}},
+	}}
+	without := &config.ToolConfig{Enforce: enforce}
+
+	if got := localEnforcedFields(withOnlyIfUsed, "repo"); !reflect.DeepEqual(got, []string{config.EnforceSchedule}) {
+		t.Errorf("localEnforcedFields() with only-if-used = %v, expected [schedule]", got)
+	}
+	if got := localEnforcedFields(without, "repo"); !reflect.DeepEqual(got, enforce.Fields) {
+		t.Errorf("localEnforcedFields() without only-if-used = %v, expected %v", got, enforce.Fields)
+	}
+	if !reflect.DeepEqual(enforce.Fields, []string{config.EnforceSchedule, config.EnforceGroups}) {
+		t.Errorf("enforce fields changed to %v", enforce.Fields)
+	}
+}
+
 func TestCheckLocalDirectoryExists(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "app"), 0o700); err != nil {

@@ -786,7 +786,7 @@ func TestCoolDownWithUpdateFlagFalse(t *testing.T) {
 			},
 		}
 
-		update := createUpdateEntry("npm", "/", toolConfig, nil)
+		update := createUpdateEntry("npm", "/", toolConfig, RepoSettings{})
 
 		expected := Cooldown{
 			SemverMajorDays: 21,
@@ -1236,7 +1236,7 @@ func TestCreateUpdateEntryAppliesScheduleAndCommitMessageOverrides(t *testing.T)
 		},
 	}
 
-	update := createUpdateEntry("npm", "/", toolConfig, nil)
+	update := createUpdateEntry("npm", "/", toolConfig, RepoSettings{})
 
 	if update.Schedule.Interval != "cron" || update.Schedule.Cronjob != "0 3 * * 1" || update.Schedule.Day != "" {
 		t.Errorf("schedule override not applied, got %+v", update.Schedule)
@@ -1259,7 +1259,7 @@ func TestCreateUpdateEntryReplacesTheScheduleWithTheSlot(t *testing.T) {
 	slotSchedule := &Schedule{Interval: "cron", Cronjob: "0 3 * * 1,4", Timezone: "UTC"}
 
 	for _, ecosystem := range []string{"npm", "docker"} {
-		update := createUpdateEntry(ecosystem, "/", toolConfig, slotSchedule)
+		update := createUpdateEntry(ecosystem, "/", toolConfig, RepoSettings{SlotSchedule: slotSchedule})
 
 		if !reflect.DeepEqual(update.Schedule, *slotSchedule) {
 			t.Errorf("%v schedule = %+v, expected the slot %+v", ecosystem, update.Schedule, *slotSchedule)
@@ -1335,8 +1335,8 @@ update-overrides:
 		t.Fatalf("ParseToolConfig() failed: %v", err)
 	}
 
-	npmUpdate := createUpdateEntry("npm", "/", *toolConfig, nil)
-	pipUpdate := createUpdateEntry("pip", "/", *toolConfig, nil)
+	npmUpdate := createUpdateEntry("npm", "/", *toolConfig, RepoSettings{})
+	pipUpdate := createUpdateEntry("pip", "/", *toolConfig, RepoSettings{})
 
 	expectedNpmSchedule := Schedule{Interval: "weekly", Timezone: "UTC"}
 	if !reflect.DeepEqual(npmUpdate.Schedule, expectedNpmSchedule) {
