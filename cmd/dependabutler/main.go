@@ -19,13 +19,19 @@ import (
 	"github.com/getyourguide/dependabutler/internal/pkg/util"
 )
 
-// LoadRemoteFileContent is the implementation of LoadFileContent, for remote files (GitHub).
-func LoadRemoteFileContent(file string, params config.LoadFileContentParameters) string {
-	content, err := params.Client.GetFileContent(params.Org, params.Repo, file, "")
-	if err != nil {
-		return ""
+// remoteFileLoader returns the implementation of LoadFileContent for remote files (GitHub). A file that cannot be read
+// is treated as empty, as before, but the error is logged and readFailed is set: the run may then miss a needed change,
+// so it must not take "no update needed" as a reason to close a pull request.
+func remoteFileLoader(readFailed *bool) config.LoadFileContent {
+	return func(file string, params config.LoadFileContentParameters) string {
+		content, err := params.Client.GetFileContent(params.Org, params.Repo, file, "")
+		if err != nil {
+			log.Printf("WARN  Could not read %v in repo %v: %v", file, params.Repo, err)
+			*readFailed = true
+			return ""
+		}
+		return string(content)
 	}
-	return string(content)
 }
 
 // LoadLocalFileContent is the implementation of LoadFileContent, for local files (file system).
@@ -404,8 +410,9 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 		return false
 	}
 
+	fileReadFailed := false
 	repoSettings := config.RepoSettings{SlotSchedule: schedule, EnforcedFields: toolConfig.Enforce.FieldsFor(repo), DirectoryGrouping: grouping, Dependencies: dependencies}
-	yamlContent, changeInfo, err := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, repoSettings, repo, LoadRemoteFileContent, loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
+	yamlContent, changeInfo, err := GetUpdatedConfigYaml(loaded.config, manifests, toolConfig, repoSettings, repo, remoteFileLoader(&fileReadFailed), loadFileParameters, CheckRemoteDirectoryExists, checkDirectoryExistsParameters)
 	if errors.Is(err, errConfigNotParsed) {
 		return true // already logged, not counted as a failure
 	}
@@ -417,6 +424,10 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 	if yamlContent == nil && toolConfig.PullRequestParameters.CloseStalePRs {
 		if loaded.treeTruncated {
 			log.Printf("WARN  Not closing a stale PR on repo %v: the file tree is truncated, so manifests may be missed.", repo)
+			return true
+		}
+		if fileReadFailed {
+			log.Printf("WARN  Not closing a stale PR on repo %v: a file could not be read, so a needed change may be missed.", repo)
 			return true
 		}
 		return closeStalePullRequest(gitHubClient, execute, org, repo, toolConfig.PullRequestParameters)
