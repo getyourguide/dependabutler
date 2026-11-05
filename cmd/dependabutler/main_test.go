@@ -346,3 +346,75 @@ func TestRemoteRepoNames(t *testing.T) {
 		})
 	}
 }
+
+func TestGetUpdatedConfigYamlTellsAnUnparsableConfigFromNoUpdate(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		current string
+		err     error
+	}{
+		{"unparsable", "version: [", errConfigNotParsed},
+		{"no update needed", "version: 2\n", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			yamlContent, _, err := GetUpdatedConfigYaml([]byte(tt.current), nil, config.ToolConfig{}, config.RepoSettings{}, "repo",
+				LoadLocalFileContent, config.LoadFileContentParameters{}, CheckLocalDirectoryExists, config.CheckDirectoryExistsParameters{})
+
+			if yamlContent != nil || !errors.Is(err, tt.err) {
+				t.Errorf("GetUpdatedConfigYaml() = %q, %v, expected no content and %v", yamlContent, err, tt.err)
+			}
+		})
+	}
+}
+
+type fakeRemoteClient struct {
+	files map[string]string
+	err   error
+}
+
+func (f fakeRemoteClient) GetFileContent(_ string, _ string, path string, _ string) ([]byte, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	content, ok := f.files[path]
+	if !ok {
+		return nil, nil // GetFileContent returns no content and no error for a missing file
+	}
+	return []byte(content), nil
+}
+
+func (f fakeRemoteClient) CheckDirectoryExists(_ string, _ string, _ string, _ string) (bool, error) {
+	return false, nil
+}
+
+func TestRemoteFileLoader(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		client         fakeRemoteClient
+		wantContent    string
+		wantReadFailed bool
+	}{{
+		name:        "it should return the file content",
+		client:      fakeRemoteClient{files: map[string]string{"go.mod": "module x"}},
+		wantContent: "module x",
+	}, {
+		name:   "it should not flag a missing file",
+		client: fakeRemoteClient{files: map[string]string{}},
+	}, {
+		name:           "it should flag a file that cannot be read",
+		client:         fakeRemoteClient{err: errors.New("502 Bad Gateway")},
+		wantReadFailed: true,
+	}} {
+		t.Run(tt.name, func(t *testing.T) {
+			readFailed := false
+			load := remoteFileLoader(&readFailed)
+			got := load("go.mod", config.LoadFileContentParameters{Client: tt.client, Org: "acme", Repo: "repo"})
+			if got != tt.wantContent {
+				t.Errorf("content = %q, want %q", got, tt.wantContent)
+			}
+			if readFailed != tt.wantReadFailed {
+				t.Errorf("readFailed = %v, want %v", readFailed, tt.wantReadFailed)
+			}
+		})
+	}
+}
