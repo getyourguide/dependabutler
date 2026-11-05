@@ -82,8 +82,8 @@ func TestCheckDirectoryExistsTellsMissingFromFailed(t *testing.T) {
 	}
 }
 
-// stalePRServer serves an open dependabutler PR number 7, which reports total commits and lists those authored by the
-// given emails. With no emails, the repo has no open dependabutler PR. It records the requests that change the PR.
+// stalePRServer serves an open dependabutler PR number 7, which reports total commits and lists one commit per given
+// email: "author", or "author|committer" when they differ. With no emails, the repo has no open dependabutler PR. It records the requests that change the PR.
 func stalePRServer(t *testing.T, emails []string, total int, changes *[]string) *Client {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +100,11 @@ func stalePRServer(t *testing.T, emails []string, total int, changes *[]string) 
 		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/app/pulls/7/commits":
 			commits := make([]string, 0, len(emails))
 			for _, email := range emails {
-				commits = append(commits, `{"commit": {"author": {"email": "`+email+`"}}}`)
+				author, committer, found := strings.Cut(email, "|")
+				if !found {
+					committer = author
+				}
+				commits = append(commits, `{"commit": {"author": {"email": "`+author+`"}, "committer": {"email": "`+committer+`"}}}`)
 			}
 			_, _ = w.Write([]byte("[" + strings.Join(commits, ",") + "]"))
 		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/app/issues/7/comments":
@@ -136,6 +140,7 @@ func TestGetStalePullRequest(t *testing.T) {
 		{"no open PR", "dependabutler-update", nil, 0, false},
 		{"only dependabutler commits", "dependabutler-update", []string{"dependabutler@example.com", "Dependabutler@Example.com"}, 2, true},
 		{"commit by someone else", "dependabutler-update", []string{"dependabutler@example.com", "dev@example.com"}, 2, false},
+		{"commit amended by someone else", "dependabutler-update", []string{"dependabutler@example.com|dev@example.com"}, 1, false},
 		{"more commits than listed", "dependabutler-update", []string{"dependabutler@example.com"}, 251, false},
 		{"other branch", "config-sync", []string{"dependabutler@example.com"}, 1, false},
 	} {
