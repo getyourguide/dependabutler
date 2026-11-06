@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/google/go-github/v90 v90.0.0
-	go.yaml.in/yaml/v4 v4.0.0-rc.7
+	go.yaml.in/yaml/v4 v4.0.0-rc.9
 )
 
 require github.com/google/go-querystring v1.2.0 // indirect
