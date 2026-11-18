@@ -221,6 +221,19 @@ pull-request-parameters:
   it (one per 100 commits), and two more to close it.
 - In log-only mode, the pull request is only logged.
 
+### Pull request description note
+`pr-description-note` adds free-form Markdown to the end of the description of every pull request dependabutler creates
+or updates, including those that only reset enforced settings. For example, it can tell owners how to get the
+Dependabot pull requests that follow merged automatically:
+
+```yaml
+pull-request-parameters:
+  pr-description-note: |
+    Dependabot opens pull requests for the entries in this file. Set up auto-merge so they do not pile up.
+```
+
+Without it, nothing is added.
+
 ### Parameters
 
 | parameter           | mandatory | default             | description                                   |

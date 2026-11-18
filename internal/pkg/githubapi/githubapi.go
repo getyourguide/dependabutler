@@ -292,7 +292,7 @@ func (client *Client) CloseStalePullRequest(org string, repo string, pr *github.
 }
 
 // CreatePRDescription renders the body of the PR to be created.
-func CreatePRDescription(changeInfo config.ChangeInfo, enforceNote string) string {
+func CreatePRDescription(changeInfo config.ChangeInfo, prParams config.PullRequestParameters) string {
 	lines := []string{"### dependabutler has created this PR to update `.github/dependabot.yml`"}
 	if len(changeInfo.NewRegistries) > 0 {
 		lines = append(lines, "")
@@ -348,13 +348,17 @@ func CreatePRDescription(changeInfo config.ChangeInfo, enforceNote string) strin
 			lines = append(lines, fmt.Sprintf("| %v | `%v` | %v |", update.Type, update.Directory, strings.Join(update.Fields, ", ")))
 		}
 
-		if enforceNote != "" {
-			lines = append(lines, "", strings.TrimSpace(enforceNote))
+		if prParams.EnforcePRNote != "" {
+			lines = append(lines, "", strings.TrimSpace(prParams.EnforcePRNote))
 		}
 	} else {
 		lines = append(lines, "")
 		lines = append(lines, "#### note")
 		lines = append(lines, "* Check the default settings applied (schedule, open-pull-requests-limit, etc.) and change if required.")
+	}
+
+	if prParams.PRDescriptionNote != "" {
+		lines = append(lines, "", strings.TrimSpace(prParams.PRDescriptionNote))
 	}
 
 	return strings.Join(lines, "\n")
