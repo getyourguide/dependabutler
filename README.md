@@ -229,7 +229,7 @@ Dependabot pull requests that follow merged automatically:
 ```yaml
 pull-request-parameters:
   pr-description-note: |
-    Once this is merged, Dependabot opens pull requests for the new entries. Set up auto-merge so they do not pile up.
+    Dependabot opens pull requests for the entries in this file. Set up auto-merge so they do not pile up.
 ```
 
 Without it, nothing is added.
