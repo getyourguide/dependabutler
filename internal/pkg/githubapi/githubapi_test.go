@@ -58,8 +58,8 @@ func TestCreatePRDescriptionWithNewUpdatesHasNewUpdatesNote(t *testing.T) {
 	} {
 		description := CreatePRDescription(changeInfo, prParams)
 
-		if !strings.Contains(description, "\n\nSet up auto-merge for the Dependabot PRs.") {
-			t.Errorf("description of a PR %v that adds updates does not contain the new updates note:\n%v", name, description)
+		if !strings.Contains(description, "| npm | `/` | `package.json` |\n\nSet up auto-merge for the Dependabot PRs.\n\n#### ") {
+			t.Errorf("description of a PR %v that adds updates does not have the new updates note after the added updates:\n%v", name, description)
 		}
 	}
 }

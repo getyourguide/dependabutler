@@ -204,9 +204,6 @@ Initial version.
   kept. Off unless set. See "Closing stale pull requests" in the README.
 - A `dependabot.yml` that cannot be parsed is told apart from one that needs no update. The repository is still skipped
   without counting as a failure.
-
-## v0.14.0
-
 - Added `new-updates-pr-note` to `pull-request-parameters`: a note added to the description of every pull request that
   adds update entries, for example to tell owners how to get the Dependabot pull requests that follow merged
   automatically. See "Note for new update entries" in the README.
