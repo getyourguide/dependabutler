@@ -92,8 +92,8 @@ pull-request-parameters:
   # enforce-pr-title: "[dependabutler] apply the default dependabot settings"
   # enforce-commit-message: "[dependabutler] apply the default dependabot settings"
   # enforce-pr-note: "These settings follow the defaults. To keep your own, add the repository to the exceptions file."
-  # added to the description of PRs that add update entries
-  # new-updates-pr-note: "Dependabot will open pull requests for these entries. Set up auto-merge so they do not pile up."
+  # markdown added to the end of every PR description
+  # pr-description-note: "Once this is merged, Dependabot opens pull requests for the new entries. Set up auto-merge so they do not pile up."
   # close an open dependabutler PR when the repository needs no update; PRs with commits by others are left open
   # close-stale-prs: true
 

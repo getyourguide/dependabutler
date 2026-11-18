@@ -320,10 +320,6 @@ func CreatePRDescription(changeInfo config.ChangeInfo, prParams config.PullReque
 		for _, update := range changeInfo.NewUpdates {
 			lines = append(lines, fmt.Sprintf("| %v | `%v` | `%v` |", update.Type, update.Directory, update.File))
 		}
-
-		if prParams.NewUpdatesPRNote != "" {
-			lines = append(lines, "", strings.TrimSpace(prParams.NewUpdatesPRNote))
-		}
 	}
 	if len(changeInfo.FixedUpdates) > 0 {
 		lines = append(lines, "")
@@ -359,6 +355,10 @@ func CreatePRDescription(changeInfo config.ChangeInfo, prParams config.PullReque
 		lines = append(lines, "")
 		lines = append(lines, "#### note")
 		lines = append(lines, "* Check the default settings applied (schedule, open-pull-requests-limit, etc.) and change if required.")
+	}
+
+	if prParams.PRDescriptionNote != "" {
+		lines = append(lines, "", strings.TrimSpace(prParams.PRDescriptionNote))
 	}
 
 	return strings.Join(lines, "\n")

@@ -221,18 +221,18 @@ pull-request-parameters:
   it (one per 100 commits), and two more to close it.
 - In log-only mode, the pull request is only logged.
 
-### Note for new update entries
-Once a pull request that adds update entries is merged, Dependabot starts opening pull requests for them.
-`new-updates-pr-note` adds a note to the description of every pull request that adds update entries, for example to
-point owners to how they can get those pull requests merged automatically:
+### Pull request description note
+`pr-description-note` adds free-form Markdown to the end of the description of every pull request dependabutler creates
+or updates, including those that only reset enforced settings. For example, it can tell owners how to get the
+Dependabot pull requests that follow merged automatically:
 
 ```yaml
 pull-request-parameters:
-  new-updates-pr-note: |
-    Dependabot will open pull requests for these entries. Set up auto-merge so they do not pile up.
+  pr-description-note: |
+    Once this is merged, Dependabot opens pull requests for the new entries. Set up auto-merge so they do not pile up.
 ```
 
-The note follows the list of added updates, with or without enforced settings in the same pull request.
+Without it, nothing is added.
 
 ### Parameters
 

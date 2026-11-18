@@ -47,34 +47,30 @@ func TestCreatePRDescriptionWithEnforcementDoesNotInviteChanges(t *testing.T) {
 	}
 }
 
-func TestCreatePRDescriptionWithNewUpdatesHasNewUpdatesNote(t *testing.T) {
-	newUpdates := []config.UpdateInfo{{Type: "npm", Directory: "/", File: "package.json"}}
-	enforcedUpdates := []config.EnforcedUpdateInfo{{Type: "npm", Directory: "/web", Fields: []string{"schedule"}}}
-	prParams := config.PullRequestParameters{NewUpdatesPRNote: "Set up auto-merge for the Dependabot PRs.\n"}
+func TestCreatePRDescriptionEndsWithTheDescriptionNote(t *testing.T) {
+	prParams := config.PullRequestParameters{PRDescriptionNote: "Set up auto-merge for the Dependabot PRs.\n"}
 
 	for name, changeInfo := range map[string]config.ChangeInfo{
-		"without enforcement": {NewUpdates: newUpdates},
-		"with enforcement":    {NewUpdates: newUpdates, EnforcedUpdates: enforcedUpdates},
+		"that adds updates": {NewUpdates: []config.UpdateInfo{{Type: "npm", Directory: "/", File: "package.json"}}},
+		"that only enforces settings": {EnforcedUpdates: []config.EnforcedUpdateInfo{
+			{Type: "npm", Directory: "/web", Fields: []string{"schedule"}},
+		}},
 	} {
 		description := CreatePRDescription(changeInfo, prParams)
 
-		if !strings.Contains(description, "| npm | `/` | `package.json` |\n\nSet up auto-merge for the Dependabot PRs.\n\n#### ") {
-			t.Errorf("description of a PR %v that adds updates does not have the new updates note after the added updates:\n%v", name, description)
+		if !strings.HasSuffix(description, "\n\nSet up auto-merge for the Dependabot PRs.") {
+			t.Errorf("description of a PR %v does not end with the description note:\n%v", name, description)
 		}
 	}
 }
 
-func TestCreatePRDescriptionWithoutNewUpdatesHasNoNewUpdatesNote(t *testing.T) {
-	changeInfo := config.ChangeInfo{
-		FixedUpdates:    []config.UpdateInfo{{Type: "npm", Directory: "/"}},
-		RemovedUpdates:  []config.UpdateInfo{{Type: "pip", Directory: "/old"}},
-		EnforcedUpdates: []config.EnforcedUpdateInfo{{Type: "npm", Directory: "/", Fields: []string{"schedule"}}},
-	}
+func TestCreatePRDescriptionWithoutDescriptionNoteIsUnchanged(t *testing.T) {
+	changeInfo := config.ChangeInfo{NewUpdates: []config.UpdateInfo{{Type: "npm", Directory: "/", File: "package.json"}}}
 
-	description := CreatePRDescription(changeInfo, config.PullRequestParameters{NewUpdatesPRNote: "Set up auto-merge for the Dependabot PRs."})
+	description := CreatePRDescription(changeInfo, config.PullRequestParameters{})
 
-	if strings.Contains(description, "auto-merge") {
-		t.Errorf("description of a PR without new updates contains the new updates note:\n%v", description)
+	if !strings.HasSuffix(description, "and change if required.") {
+		t.Errorf("description of a PR without a description note does not end with the default note:\n%v", description)
 	}
 }
 
