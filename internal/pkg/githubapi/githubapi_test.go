@@ -18,7 +18,7 @@ func TestCreatePRDescriptionListsEnforcedSettings(t *testing.T) {
 		{Type: "npm", Directory: "/web", Fields: []string{"schedule", "cooldown"}},
 	}}
 
-	description := CreatePRDescription(changeInfo, "Ask for an exception in the exceptions file.")
+	description := CreatePRDescription(changeInfo, config.PullRequestParameters{EnforcePRNote: "Ask for an exception in the exceptions file."})
 
 	for _, expected := range []string{"| npm | `/web` | schedule, cooldown |", "Ask for an exception in the exceptions file."} {
 		if !strings.Contains(description, expected) {
@@ -30,7 +30,7 @@ func TestCreatePRDescriptionListsEnforcedSettings(t *testing.T) {
 func TestCreatePRDescriptionWithoutEnforcementHasNoNote(t *testing.T) {
 	changeInfo := config.ChangeInfo{NewUpdates: []config.UpdateInfo{{Type: "gomod", Directory: "/", File: "go.mod"}}}
 
-	description := CreatePRDescription(changeInfo, "Ask for an exception in the exceptions file.")
+	description := CreatePRDescription(changeInfo, config.PullRequestParameters{EnforcePRNote: "Ask for an exception in the exceptions file."})
 
 	if strings.Contains(description, "exception") {
 		t.Errorf("description of a PR without enforcement contains the enforce note:\n%v", description)
@@ -40,10 +40,41 @@ func TestCreatePRDescriptionWithoutEnforcementHasNoNote(t *testing.T) {
 func TestCreatePRDescriptionWithEnforcementDoesNotInviteChanges(t *testing.T) {
 	changeInfo := config.ChangeInfo{EnforcedUpdates: []config.EnforcedUpdateInfo{{Type: "npm", Directory: "/", Fields: []string{"schedule"}}}}
 
-	description := CreatePRDescription(changeInfo, "")
+	description := CreatePRDescription(changeInfo, config.PullRequestParameters{})
 
 	if strings.Contains(description, "change if required") {
 		t.Errorf("description of an enforcement PR invites changing the settings:\n%v", description)
+	}
+}
+
+func TestCreatePRDescriptionWithNewUpdatesHasNewUpdatesNote(t *testing.T) {
+	newUpdates := []config.UpdateInfo{{Type: "npm", Directory: "/", File: "package.json"}}
+	enforcedUpdates := []config.EnforcedUpdateInfo{{Type: "npm", Directory: "/web", Fields: []string{"schedule"}}}
+	prParams := config.PullRequestParameters{NewUpdatesPRNote: "Set up auto-merge for the Dependabot PRs.\n"}
+
+	for name, changeInfo := range map[string]config.ChangeInfo{
+		"without enforcement": {NewUpdates: newUpdates},
+		"with enforcement":    {NewUpdates: newUpdates, EnforcedUpdates: enforcedUpdates},
+	} {
+		description := CreatePRDescription(changeInfo, prParams)
+
+		if !strings.Contains(description, "\n\nSet up auto-merge for the Dependabot PRs.") {
+			t.Errorf("description of a PR %v that adds updates does not contain the new updates note:\n%v", name, description)
+		}
+	}
+}
+
+func TestCreatePRDescriptionWithoutNewUpdatesHasNoNewUpdatesNote(t *testing.T) {
+	changeInfo := config.ChangeInfo{
+		FixedUpdates:    []config.UpdateInfo{{Type: "npm", Directory: "/"}},
+		RemovedUpdates:  []config.UpdateInfo{{Type: "pip", Directory: "/old"}},
+		EnforcedUpdates: []config.EnforcedUpdateInfo{{Type: "npm", Directory: "/", Fields: []string{"schedule"}}},
+	}
+
+	description := CreatePRDescription(changeInfo, config.PullRequestParameters{NewUpdatesPRNote: "Set up auto-merge for the Dependabot PRs."})
+
+	if strings.Contains(description, "auto-merge") {
+		t.Errorf("description of a PR without new updates contains the new updates note:\n%v", description)
 	}
 }
 

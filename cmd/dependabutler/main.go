@@ -434,7 +434,7 @@ func processRemoteRepo(toolConfig config.ToolConfig, gitHubClient *githubapi.Cli
 	}
 
 	if yamlContent != nil {
-		prDesc := githubapi.CreatePRDescription(changeInfo, toolConfig.PullRequestParameters.EnforcePRNote)
+		prDesc := githubapi.CreatePRDescription(changeInfo, toolConfig.PullRequestParameters)
 		if execute {
 			if err := gitHubClient.CreateOrUpdatePullRequest(org, repo, loaded.defaultBranch, prDesc, string(yamlContent), pullRequestConfig(toolConfig, changeInfo)); err != nil {
 				if strings.Contains(err.Error(), "pull request already exists") {
